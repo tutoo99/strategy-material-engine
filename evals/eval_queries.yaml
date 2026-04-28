@@ -1,0 +1,172 @@
+queries:
+  - id: multi-account-routing
+    query: 账号多了以后总记不清该发哪个号，怎么拆系统更稳
+    wanted_counts: [2, 5, 10]
+    expected_type: method
+    expected_role: argument
+    known_good_paths:
+      - materials/method/发布系统应该拆成_profile_persona_channel_三层.md
+      - materials/insight/命名问题通常是建模问题.md
+    bad_paths:
+      - materials/data/重复发布需要时间窗保护而不是只靠人工记忆.md
+    must_have_claims:
+      - profile
+      - persona
+      - channel
+    notes: 测多账号内容系统的结构拆分检索
+
+  - id: theme-recommendation-self-description
+    query: 主题不能只会渲染，还要知道自己适合什么文章
+    wanted_counts: [2, 5, 10]
+    expected_type: insight
+    expected_role: argument
+    known_good_paths:
+      - materials/insight/主题不仅要能被调用还要能被理解.md
+      - materials/method/theme_pack_v1_应该拆成五个文件.md
+    bad_paths:
+      - materials/story/正文和发布素材混在一起会污染最终成品.md
+    must_have_claims:
+      - 推荐
+      - 适合
+      - 主题
+    notes: 测主题推荐与可解释性检索
+
+  - id: opening-failure-hook
+    query: 我想找一个适合放在前面开场的失败案例，说明看起来是小问题，其实会把整条链路搞脏
+    wanted_counts: [2, 5, 10]
+    expected_type: story
+    expected_role: argument
+    known_good_paths:
+      - materials/story/正文和发布素材混在一起会污染最终成品.md
+    bad_paths:
+      - materials/method/preview_md_应该被当成主题系统的回归样例.md
+    must_have_claims:
+      - 污染
+      - 正文
+      - 发布素材
+    notes: 测开头型失败案例检索
+
+  - id: turn-naming-to-modeling
+    query: 我需要一个能做转折的洞见，表达表面是命名问题，本质是建模问题
+    wanted_counts: [2, 5, 10]
+    expected_type: insight
+    expected_role: turn
+    known_good_paths:
+      - materials/insight/命名问题通常是建模问题.md
+      - materials/insight/配置长不大往往不是样式问题而是数据结构问题.md
+    bad_paths:
+      - materials/data/重复发布需要时间窗保护而不是只靠人工记忆.md
+    must_have_claims:
+      - 命名问题
+      - 建模问题
+      - 转折
+    notes: 测转折型洞见检索
+
+  - id: ending-process-closing
+    query: 我需要一个适合放在结尾的收束观点，说明一个能力不接入主流程就会慢慢失效
+    wanted_counts: [2, 5, 10]
+    expected_type: method
+    expected_role: ending
+    known_good_paths:
+      - materials/method/推荐_渲染_发布要打成一个闭环.md
+    bad_paths:
+      - materials/insight/命名问题通常是建模问题.md
+    must_have_claims:
+      - 主流程
+      - 闭环
+      - 失效
+    notes: 测结尾收束型方法素材
+
+  - id: data-idempotency-protection
+    query: 我需要一个能论证自动化系统必须做幂等和重复保护的具体规则或硬证据
+    wanted_counts: [2, 5, 10]
+    expected_type: data
+    expected_role: argument
+    known_good_paths:
+      - materials/data/重复发布需要时间窗保护而不是只靠人工记忆.md
+    bad_paths:
+      - materials/insight/主题不仅要能被调用还要能被理解.md
+    must_have_claims:
+      - 重复发布
+      - 保护
+      - 时间窗
+    notes: 测数据证据型检索
+
+  - id: migration-compatibility-layer
+    query: 升级基础设施时不要一次性切断旧链路，应该先做什么缓冲设计
+    wanted_counts: [2, 5, 10]
+    expected_type: method
+    expected_role: argument
+    known_good_paths:
+      - materials/method/基础设施升级应该先做兼容层再做迁移.md
+      - materials/method/theme_pack_v1_应该拆成五个文件.md
+    bad_paths:
+      - materials/story/正文和发布素材混在一起会污染最终成品.md
+    must_have_claims:
+      - 兼容层
+      - 迁移
+      - 缓冲
+    notes: 测迁移兼容策略检索
+
+  - id: block-level-variation
+    query: 我想找一个方法素材，说明多主题系统真正拉开差异的是 block 级别变体而不是换皮
+    wanted_counts: [2, 5, 10]
+    expected_type: method
+    expected_role: argument
+    known_good_paths:
+      - materials/method/theme_pack_v1_应该拆成五个文件.md
+      - materials/method/preview_md_应该被当成主题系统的回归样例.md
+    bad_paths:
+      - materials/data/重复发布需要时间窗保护而不是只靠人工记忆.md
+    must_have_claims:
+      - block
+      - 变体
+      - 换皮
+    notes: 测主题系统的区块级方法检索
+
+  - id: regression-preview-sample
+    query: 我需要一个说明为什么要保留固定预览样例做回归检查的方法素材
+    wanted_counts: [2, 5, 10]
+    expected_type: method
+    expected_role: argument
+    known_good_paths:
+      - materials/method/preview_md_应该被当成主题系统的回归样例.md
+    bad_paths:
+      - materials/insight/命名问题通常是建模问题.md
+    must_have_claims:
+      - 回归
+      - 预览样例
+      - 固定样本
+    notes: 测回归校验类方法检索
+
+  - id: structural-growth-insight
+    query: 我想找一个洞见，表达系统长不大通常不是功能问题，而是结构不适合继续长大
+    wanted_counts: [2, 5, 10]
+    expected_type: insight
+    expected_role: turn
+    known_good_paths:
+      - materials/insight/配置长不大往往不是样式问题而是数据结构问题.md
+      - materials/insight/命名问题通常是建模问题.md
+    bad_paths:
+      - materials/data/重复发布需要时间窗保护而不是只靠人工记忆.md
+    must_have_claims:
+      - 长不大
+      - 结构
+      - 数据结构
+    notes: 测结构增长型洞见检索
+
+  - id: recommendation-must-enter-main-flow
+    query: 推荐能力如果只是展示不接主流程，为什么最终会沦为摆设
+    wanted_counts: [2, 5, 10]
+    expected_type: method
+    expected_role: ending
+    known_good_paths:
+      - materials/method/推荐_渲染_发布要打成一个闭环.md
+      - materials/insight/主题不仅要能被调用还要能被理解.md
+    bad_paths:
+      - materials/data/重复发布需要时间窗保护而不是只靠人工记忆.md
+    must_have_claims:
+      - 推荐
+      - 主流程
+      - 展示功能
+    notes: 测推荐闭环与主流程接入检索

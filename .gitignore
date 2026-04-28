@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Autocode / IDE-specific
+.autocode/
+
+# Binary indexes (build artifacts - regenerate with flush_indexes.py)
+index/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Eval runtime artifacts (cache, reports with account IDs)
+evals/query_planner/planner_cache.json
+evals/query_planner/planner_events.jsonl
+evals/reports/
+
+# Node (if any frontend ever added)
+node_modules/
+
+# Misc
+*.log
+*.tmp

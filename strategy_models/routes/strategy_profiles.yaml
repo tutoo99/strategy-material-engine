@@ -1,0 +1,371 @@
+strategies:
+  - strategy_id: STG001
+    label: 强结果选题
+    summary: 用真实结果和限定场景做破冰，让高意图人群先点进来。
+    applicable_user_types: [个人副业者, 职场新人, 内容创业者]
+    applicable_platforms: [B站, 公众号]
+    applicable_domains: [副业教育 / 知识付费, 内容副业]
+    activation_rules:
+      - 需要在公域快速筛出高意图人群
+      - 已经有真实结果或真实经历可讲
+    not_applicable_rules:
+      - 没有真实结果支撑时，不适合直接上强承诺标题
+    action_refs: [AP001]
+    template_refs: [TR001]
+    tool_refs: [TC001]
+    platform_resource_refs: [B站]
+    preferred_case_refs:
+      - cases/在B站教年轻人赚钱月入三万，从0成为数字游民，全流程底层逻辑分享.md
+    task_title: 产出首轮破冰强结果内容
+    task_action: 基于真实结果写出 3 个强结果题目，筛出 1 个发布，并把 CTA 收敛到单入口。
+    estimated_time: 2 小时
+    success_check: 至少发布 1 条破冰内容，并拿到高意图评论或私信反馈。
+  - strategy_id: STG002
+    label: 长尾流量
+    summary: 通过可持续搜索需求和长期刚需内容，持续吃内容复利。
+    applicable_user_types: [个人副业者, 内容副业者]
+    applicable_platforms: [B站]
+    applicable_domains: [内容电商, 内容副业]
+    activation_rules:
+      - 预算有限，需要低成本持续拿流量
+    not_applicable_rules:
+      - 只追热点、不愿做长期内容沉淀时不适用
+    action_refs: [AP004]
+    template_refs: [TR004]
+    tool_refs: [TC001]
+    platform_resource_refs: [B站, B站搜索]
+    preferred_case_refs:
+      - cases/bilibili_case_approved.md
+      - cases/B站悬赏带货实战手册.md
+    task_title: 搭建可持续的长尾内容清单
+    task_action: 从搜索和场景需求中找 10 个可反复产出的长尾选题，并优先发布搜索需求最强的 1 个。
+    estimated_time: 3 小时
+    success_check: 形成至少 10 个长尾选题清单，并发布 1 条验证内容。
+  - strategy_id: STG003
+    label: 内容SEO
+    summary: 用搜索导向和需求词结构优化内容，让平台持续推荐可检索内容。
+    applicable_user_types: [内容副业者, 电商带货创作者]
+    applicable_platforms: [B站]
+    applicable_domains: [内容电商]
+    activation_rules:
+      - 已有内容生产能力，需要强化搜索承接
+    not_applicable_rules:
+      - 完全不做标题和选题结构优化时不适用
+    action_refs: [AP004]
+    template_refs: [TR004]
+    tool_refs: [TC003]
+    platform_resource_refs: [B站创作中心, 选品中心]
+    preferred_case_refs:
+      - cases/B站悬赏带货实战手册.md
+    task_title: 优化搜索导向的内容结构
+    task_action: 用搜索词和高意图关键词重写当前选题与封面标题，并绑定到平台内容面板复查。
+    estimated_time: 2 小时
+    success_check: 产出 1 份重写后的搜索导向选题清单，并完成标题优化。
+  - strategy_id: STG004
+    label: 细分选题
+    summary: 给大类目叠加特定人群和极端场景，切出更精准的转化入口。
+    applicable_user_types: [个人副业者, 内容副业者]
+    applicable_platforms: [B站]
+    applicable_domains: [内容电商, 内容副业]
+    activation_rules:
+      - 当前大类目竞争强，需要切更窄场景
+    not_applicable_rules:
+      - 连基础人群都未定义清楚时不适用
+    action_refs: [AP004]
+    template_refs: [TR004]
+    tool_refs: [TC001]
+    platform_resource_refs: [B站, B站搜索]
+    preferred_case_refs:
+      - cases/bilibili_case_approved.md
+    task_title: 把大类目改写成细分场景题
+    task_action: 选 1 个大类目，为它补上特定人群和极端场景，形成 3 个细分选题版本。
+    estimated_time: 90 分钟
+    success_check: 输出 3 个可直接发布的细分场景选题。
+  - strategy_id: STG005
+    label: 录屏内容
+    summary: 通过低门槛录屏或录屏口播，快速完成内容冷启动和带货试错。
+    applicable_user_types: [个人副业者, 电商带货创作者]
+    applicable_platforms: [B站]
+    applicable_domains: [内容电商, 内容副业]
+    activation_rules:
+      - 不想真人出镜，或当前内容制作能力有限
+    not_applicable_rules:
+      - 无法稳定控制视频节奏与展示逻辑时不适用
+    action_refs: [AP005]
+    template_refs: [TR004]
+    tool_refs: [TC003]
+    platform_resource_refs: [B站, 剪映]
+    preferred_case_refs:
+      - cases/bilibili_case_approved.md
+      - cases/bilibili_haowu_gmv54w.md
+    task_title: 做出首条低门槛录屏验证内容
+    task_action: 按录屏展示、脚本讲解、CTA 收口三段式，制作并发布 1 条录屏验证内容。
+    estimated_time: 3 小时
+    success_check: 发布 1 条录屏内容，时长与 CTA 都完成标准化。
+  - strategy_id: STG006
+    label: 冷启动验证
+    summary: 先用最小动作拿到第一批真实信号，再决定是否加码。
+    applicable_user_types: [个人副业者, 职场新人, 知识付费创业者]
+    applicable_platforms: [B站, 微信, 公众号]
+    applicable_domains: [内容副业, 内容电商, 副业教育 / 知识付费]
+    activation_rules:
+      - 当前还没有稳定正反馈
+    not_applicable_rules:
+      - 一上来就追求复杂漏斗，不适合冷启动阶段
+    action_refs: [AP001]
+    template_refs: [TR001]
+    tool_refs: [TC001]
+    platform_resource_refs: [B站]
+    preferred_case_refs:
+      - cases/bilibili_case_approved.md
+      - cases/在B站教年轻人赚钱月入三万，从0成为数字游民，全流程底层逻辑分享.md
+    task_title: 完成最小冷启动验证
+    task_action: 只做 1 条高意图内容或 1 轮小范围验证，用真实互动或付款信号决定是否继续。
+    estimated_time: 2 小时
+    success_check: 拿到首轮可记录信号，例如评论、私信、加微或付款。
+  - strategy_id: STG007
+    label: 种子用户验证
+    summary: 先在熟人或近关系里做收费验证，再决定正式产品结构。
+    applicable_user_types: [知识付费创业者, 个人副业者]
+    applicable_platforms: [微信, 公众号, B站]
+    applicable_domains: [副业教育 / 知识付费]
+    activation_rules:
+      - 需要确认用户是否真的愿意付费
+    not_applicable_rules:
+      - 只有口头访谈、没有真实付款，不算验证完成
+    action_refs: [AP002]
+    template_refs: [TR002]
+    tool_refs: [TC002]
+    platform_resource_refs: [微信, 公众号]
+    preferred_case_refs:
+      - cases/在B站教年轻人赚钱月入三万，从0成为数字游民，全流程底层逻辑分享.md
+    task_title: 发起一轮种子用户收费验证
+    task_action: 按用户分层邀约 20 到 30 人试听或试用，并要求写出愿付价格与真实付款。
+    estimated_time: 4 小时
+    success_check: 形成可复核的验证表，并至少拿到一批真实付款样本。
+  - strategy_id: STG008
+    label: 单入口承接
+    summary: 把资料领取、支付和交付收敛到一条路径，减少私聊解释成本。
+    applicable_user_types: [知识付费创业者, 个人副业者]
+    applicable_platforms: [微信, 公众号, 小鹅通]
+    applicable_domains: [副业教育 / 知识付费]
+    activation_rules:
+      - 加微和咨询量上涨后，人工承接开始卡顿
+    not_applicable_rules:
+      - 还没有稳定流量入口时，不急着上复杂承接系统
+    action_refs: [AP003]
+    template_refs: [TR003]
+    tool_refs: [TC002]
+    platform_resource_refs: [微信, 公众号, 小鹅通]
+    preferred_case_refs:
+      - cases/在B站教年轻人赚钱月入三万，从0成为数字游民，全流程底层逻辑分享.md
+    task_title: 改造成单入口承接路径
+    task_action: 把欢迎语、资料入口、低价课支付和交付入口收敛成一条线，并停止多口径解释。
+    estimated_time: 3 小时
+    success_check: 完成单入口路径图，并能用 1 个入口完成领取与支付。
+  - strategy_id: STG009
+    label: 高客单承接
+    summary: 把高客单申请放到前端交付之后，而不是靠私聊临时解释。
+    applicable_user_types: [知识付费创业者]
+    applicable_platforms: [微信, 小鹅通]
+    applicable_domains: [副业教育 / 知识付费]
+    activation_rules:
+      - 已有低价验证品，且要把合适用户导向更高客单
+    not_applicable_rules:
+      - 前端产品边界不清时，不适合直接推高客单
+    action_refs: [AP003]
+    template_refs: [TR003]
+    tool_refs: [TC002]
+    platform_resource_refs: [微信, 小鹅通]
+    preferred_case_refs:
+      - cases/在B站教年轻人赚钱月入三万，从0成为数字游民，全流程底层逻辑分享.md
+    task_title: 明确高客单升级入口
+    task_action: 给前端验证品补清楚边界说明，并把高客单申请放到完成前端交付后的下一步。
+    estimated_time: 2 小时
+    success_check: 前端与高客单的边界说明卡完成，并有清晰升级入口。
+  - strategy_id: STG010
+    label: 选品策略
+    summary: 用搜索、场景和佣金逻辑筛品，避免只凭直觉跟热品。
+    applicable_user_types: [电商带货创作者, 个人副业者]
+    applicable_platforms: [B站]
+    applicable_domains: [内容电商, 内容副业]
+    activation_rules:
+      - 当前核心问题是有流量但不出单，或品类选择混乱
+    not_applicable_rules:
+      - 不愿意做搜索验证和佣金对比时不适用
+    action_refs: [AP004]
+    template_refs: [TR004]
+    tool_refs: [TC003]
+    platform_resource_refs: [B站搜索, 选品中心, 京东联盟PID, 淘宝联盟PID, 京粉]
+    preferred_case_refs:
+      - cases/bilibili_case_approved.md
+      - cases/B站悬赏带货实战手册.md
+      - cases/bilibili_haowu_gmv54w.md
+    task_title: 建立可执行的选品清单
+    task_action: 用搜索结果、场景需求和佣金对比建 10 个候选品，再选 1 个进入首发验证。
+    estimated_time: 3 小时
+    success_check: 形成至少 10 个候选品评分表，并确定首发验证品。
+  - strategy_id: STG011
+    label: 评论区转化
+    summary: 用评论区互动和蓝链承接，把意向从看内容推到下单或留资。
+    applicable_user_types: [电商带货创作者, 内容副业者]
+    applicable_platforms: [B站]
+    applicable_domains: [内容电商, 内容副业]
+    activation_rules:
+      - 已有内容播放，需要提升互动和转化承接
+    not_applicable_rules:
+      - 视频本身没有明确购买场景时，不适合只改评论区
+    action_refs: [AP006]
+    template_refs: [TR005]
+    tool_refs: [TC003]
+    platform_resource_refs: [B站悬赏计划, 京东联盟PID, 淘宝联盟PID]
+    preferred_case_refs:
+      - cases/B站悬赏带货实战手册.md
+      - cases/bilibili_haowu_gmv54w.md
+    task_title: 重做评论区承接动作
+    task_action: 给视频补投票弹幕、评论引导和蓝链回复脚本，把评论区变成转化承接区。
+    estimated_time: 2 小时
+    success_check: 评论区脚本上线，并出现可记录的互动与点击提升。
+  - strategy_id: STG012
+    label: 营销节点
+    summary: 在大促、新品和红包节点上集中放大已有路径，提高短时爆发收益。
+    applicable_user_types: [电商带货创作者]
+    applicable_platforms: [B站]
+    applicable_domains: [内容电商, 内容副业]
+    activation_rules:
+      - 已有基本转化路径，准备借节点放大
+    not_applicable_rules:
+      - 基础选品和转化没打通时，不适合只赌节点爆发
+    action_refs: [AP006]
+    template_refs: [TR005]
+    tool_refs: [TC003]
+    platform_resource_refs: [B站悬赏计划, 选品中心, 京东联盟PID, 淘宝联盟PID]
+    preferred_case_refs:
+      - cases/B站悬赏带货实战手册.md
+      - cases/bilibili_haowu_gmv54w.md
+    task_title: 绑定一个节点做集中放大
+    task_action: 选 1 个大促或新品节点，围绕节点内容、评论承接和佣金入口做集中投放式发布。
+    estimated_time: 2 小时
+    success_check: 形成节点执行清单，并至少完成 1 轮节点内容发布。
+  - strategy_id: STG013
+    label: 矩阵运营
+    summary: 用多账号或多方向内容扩大发布面，同时共享选品和内容资产。
+    applicable_user_types: [电商带货创作者, 团队型创作者]
+    applicable_platforms: [B站]
+    applicable_domains: [内容电商]
+    activation_rules:
+      - 已有可复用的选品或内容模板，准备扩大覆盖面
+    not_applicable_rules:
+      - 单条路径还没跑通时，不急着开矩阵
+    action_refs: [AP004]
+    template_refs: [TR004]
+    tool_refs: [TC003]
+    platform_resource_refs: [B站创作中心, 火烧云数据]
+    preferred_case_refs:
+      - cases/B站悬赏带货实战手册.md
+      - cases/bilibili_case_approved.md
+    task_title: 复制一条可复用的矩阵路径
+    task_action: 从已验证内容里挑 1 套模板，定义复用条件，再决定是否拆成小号或多方向内容。
+    estimated_time: 3 小时
+    success_check: 完成 1 套矩阵复用模板，并明确复制边界。
+  - strategy_id: STG014
+    label: IP验证
+    summary: 先确认 IP 当前仍在爆，再决定是否投入脚本和生成成本。
+    applicable_user_types: [AI内容创业者, YouTube 创作者]
+    applicable_platforms: [YouTube]
+    applicable_domains: [AI视频内容创业]
+    activation_rules:
+      - 需要先判断热点 IP 当前是否仍有流量
+    not_applicable_rules:
+      - 只凭印象判断 IP 热度时不适用
+    action_refs: [AP007]
+    template_refs: [TR006]
+    tool_refs: [TC004]
+    platform_resource_refs: [Viewstats, YouTube无痕首页]
+    preferred_case_refs:
+      - cases/youtube_seedance2真人爆款视频.md
+    task_title: 完成一轮 IP 热度验证
+    task_action: 从无痕首页和 Viewstats 交叉确认 3 个候选 IP，只保留仍在爆发的那一个。
+    estimated_time: 90 分钟
+    success_check: 完成 1 份 IP 验证记录表，并确定 1 个可做 IP。
+  - strategy_id: STG015
+    label: 脚本挖掘
+    summary: 从平台推荐和跨平台内容池里找可复爆脚本，不直接照搬。
+    applicable_user_types: [AI内容创业者, YouTube 创作者]
+    applicable_platforms: [YouTube]
+    applicable_domains: [AI视频内容创业]
+    activation_rules:
+      - 已确定可做 IP，需要找可复爆脚本
+    not_applicable_rules:
+      - 只看单平台，容易同质化
+    action_refs: [AP008]
+    template_refs: [TR006]
+    tool_refs: [TC004]
+    platform_resource_refs: [YouTube无痕首页, Viewstats, 豆包]
+    preferred_case_refs:
+      - cases/youtube_seedance2真人爆款视频.md
+    task_title: 建立脚本源清单
+    task_action: 从 YouTube 推荐和国内内容池各挖 3 个脚本源，并筛出最适合改写的 1 个。
+    estimated_time: 2 小时
+    success_check: 输出 1 份脚本源清单，并锁定 1 条待拆脚本。
+  - strategy_id: STG016
+    label: 分镜拆解
+    summary: 用 AI 提供草稿，但必须逐镜校对，确保剧情和镜头不跑偏。
+    applicable_user_types: [AI内容创业者, YouTube 创作者]
+    applicable_platforms: [YouTube]
+    applicable_domains: [AI视频内容创业]
+    activation_rules:
+      - 已确定脚本，需要拆成可生成的分镜结构
+    not_applicable_rules:
+      - 不做人工逐镜校对时不适用
+    action_refs: [AP009]
+    template_refs: [TR007]
+    tool_refs: [TC004]
+    platform_resource_refs: [Gemini AI Studio]
+    preferred_case_refs:
+      - cases/youtube_seedance2真人爆款视频.md
+    task_title: 完成一版可用分镜表
+    task_action: 用 Gemini 出分镜草稿，再按原视频逐镜删改，形成可生成分镜表。
+    estimated_time: 2 小时
+    success_check: 输出 1 份逐镜校对后的分镜表。
+  - strategy_id: STG017
+    label: AI视频生成
+    summary: 按角色图、镜头约束和分段生成规则完成主流程出片。
+    applicable_user_types: [AI内容创业者, YouTube 创作者]
+    applicable_platforms: [YouTube]
+    applicable_domains: [AI视频内容创业]
+    activation_rules:
+      - 已有角色图和分镜表，可以进入分段生成
+    not_applicable_rules:
+      - 角色图和镜头逻辑没锁定时，不适合直接生成
+    action_refs: [AP010]
+    template_refs: [TR007]
+    tool_refs: [TC004]
+    platform_resource_refs: [Seedance 2.0, Seedance 1.0, Gemini图片生成]
+    preferred_case_refs:
+      - cases/youtube_seedance2真人爆款视频.md
+    task_title: 跑通主流程生成
+    task_action: 先做角色图，再按 10 镜 / 15 秒分段生成主流程，缺镜头用补镜流程兜底。
+    estimated_time: 3 小时
+    success_check: 产出 1 套可剪辑的分段视频素材。
+  - strategy_id: STG018
+    label: 节奏剪辑
+    summary: 用原片节奏和 BGM 做重剪，让 AI 画面重新成立。
+    applicable_user_types: [AI内容创业者, YouTube 创作者]
+    applicable_platforms: [YouTube]
+    applicable_domains: [AI视频内容创业]
+    activation_rules:
+      - 已有分段素材，需要重构节奏与情绪
+    not_applicable_rules:
+      - 完全不复查节奏，只顺拼素材时不适用
+    action_refs: [AP010]
+    template_refs: [TR007]
+    tool_refs: [TC004]
+    platform_resource_refs: [剪映, QQ音乐]
+    preferred_case_refs:
+      - cases/youtube_seedance2真人爆款视频.md
+    task_title: 完成一轮节奏重剪
+    task_action: 复用原片情绪结构与 BGM，按信息镜头和情绪镜头节奏重新剪出第一版成片。
+    estimated_time: 2 小时
+    success_check: 输出 1 条完成节奏重剪的成片。
+

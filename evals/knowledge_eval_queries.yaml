@@ -1,0 +1,40 @@
+queries:
+  - id: person-intro-shiren-hybrid
+    query: 介绍施仁
+    mode: hybrid
+    known_good_paths:
+      - assets/entities/people/施仁.md
+      - sources/materials/普通人如何跑通项目1-100？两个核心公式告诉你答案.md
+    notes: 人物介绍 query 应优先命中施仁人物卡，并保留 source 证据在前 3
+
+  - id: person-intro-shiren-source
+    query: 介绍施仁
+    mode: source
+    known_good_paths:
+      - assets/entities/people/施仁.md
+      - sources/materials/普通人如何跑通项目1-100？两个核心公式告诉你答案.md
+    notes: source 模式下允许人物卡 Top1，但 source 原文仍应在前 3
+
+  - id: person-who-is-shiren
+    query: 施仁是谁
+    mode: source
+    known_good_paths:
+      - assets/entities/people/施仁.md
+      - sources/materials/普通人如何跑通项目1-100？两个核心公式告诉你答案.md
+    notes: 同一人物 query family 的变体应稳定命中人物卡与原始来源
+
+  - id: person-achievements-shiren
+    query: 施仁做过什么
+    mode: source
+    known_good_paths:
+      - assets/entities/people/施仁.md
+      - sources/materials/普通人如何跑通项目1-100？两个核心公式告诉你答案.md
+    notes: 人物经历类 query 应优先展示实体卡里的代表经历槽位
+
+  - id: person-methodology-shiren
+    query: 施仁的方法论
+    mode: source
+    known_good_paths:
+      - assets/entities/people/施仁.md
+      - sources/materials/普通人如何跑通项目1-100？两个核心公式告诉你答案.md
+    notes: 人物方法论类 query 应优先展示实体卡里的方法论槽位

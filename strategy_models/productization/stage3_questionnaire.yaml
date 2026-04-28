@@ -1,0 +1,205 @@
+version: v1
+title: 阶段三策略推演问答脚本
+description: 用多选问卷收敛情境、目标、平台、业务领域和资源约束，再自动触发阶段三策略推演。
+defaults:
+  include_situation_default_constraints: true
+questions:
+  - id: situation_id
+    order: 1
+    title: 问题1
+    prompt: 请描述你的主要情况
+    answer_type: single_choice
+    target_field: user_type
+    options:
+      - id: S001
+        label: 个人副业者
+        description: 低预算、时间碎片化、单人启动，需要先拿到真实反馈。
+        maps_to:
+          user_type: 个人副业者
+      - id: S002
+        label: 职场新人
+        description: 主业占时间，需要低试错地验证副业方向。
+        maps_to:
+          user_type: 职场新人
+      - id: S003
+        label: 内容创业者
+        description: 已愿意长期做内容，但变现结构还没完全打通。
+        maps_to:
+          user_type: 内容创业者
+      - id: S004
+        label: 内容副业者
+        description: 已在做内容副业，需要更稳的选题和转化路径。
+        maps_to:
+          user_type: 内容副业者
+      - id: S005
+        label: 电商带货创作者
+        description: 已明确做内容电商，需要打通选品和转化。
+        maps_to:
+          user_type: 电商带货创作者
+      - id: S006
+        label: 知识付费创业者
+        description: 重点是验证是否愿意付费，再收敛承接与交付。
+        maps_to:
+          user_type: 知识付费创业者
+      - id: S007
+        label: 团队型创作者
+        description: 已有协作能力，目标是复制和放大已验证路径。
+        maps_to:
+          user_type: 团队型创作者
+      - id: S008
+        label: AI内容创业者
+        description: 关注 AI 视频冷启动和量产，需要工具链与质量控制。
+        maps_to:
+          user_type: AI内容创业者
+      - id: S009
+        label: YouTube 创作者
+        description: 需要围绕 YouTube 完成题材、脚本和节奏量产。
+        maps_to:
+          user_type: YouTube 创作者
+
+  - id: goal_id
+    order: 2
+    title: 问题2
+    prompt: 你当前最想达成的目标是什么
+    answer_type: single_choice
+    target_field: goal
+    options:
+      - id: goal_initial_precise_traffic
+        label: 获取初始精准流量
+        description: 先拿到第一批高意图流量，而不是追求泛曝光。
+        maps_to:
+          goal: 获取初始精准流量
+      - id: goal_seed_user_validation
+        label: 种子用户付费验证
+        description: 用真实付款判断需求强度和产品可行性。
+        maps_to:
+          goal: 种子用户付费验证
+      - id: goal_private_conversion
+        label: 单入口私域承接
+        description: 把资料领取、支付和交付收敛成一条线。
+        maps_to:
+          goal: 单入口私域承接
+      - id: goal_bilibili_goods_conversion
+        label: B站带货转化
+        description: 围绕内容电商提升选品、点击和成交。
+        maps_to:
+          goal: B站带货转化
+      - id: goal_ai_video_production
+        label: AI视频快速出片
+        description: 快速完成 AI 视频验证和量产。
+        maps_to:
+          goal: AI视频快速出片
+
+  - id: platform
+    order: 3
+    title: 问题3
+    prompt: 你当前的主战场平台是什么
+    answer_type: single_choice
+    target_field: platform
+    options:
+      - id: PLATFORM_BILIBILI
+        label: B站
+        description: 适合内容冷启动、长尾流量和带货验证。
+        maps_to:
+          platform: B站
+      - id: PLATFORM_WECHAT
+        label: 微信
+        description: 适合种子用户验证和私域承接。
+        maps_to:
+          platform: 微信
+      - id: PLATFORM_WECHAT_OA
+        label: 公众号
+        description: 适合内容导流和单入口承接。
+        maps_to:
+          platform: 公众号
+      - id: PLATFORM_XIAOETONG
+        label: 小鹅通
+        description: 适合课程收款、交付和升级路径。
+        maps_to:
+          platform: 小鹅通
+      - id: PLATFORM_YOUTUBE
+        label: YouTube
+        description: 适合 AI 视频 IP 验证和量产。
+        maps_to:
+          platform: YouTube
+      - id: PLATFORM_ZHIHU
+        label: 知乎
+        description: 适合知识内容验证和搜索导向获客。
+        maps_to:
+          platform: 知乎
+
+  - id: domain
+    order: 4
+    title: 问题4
+    prompt: 你的业务领域更接近哪一类
+    answer_type: single_choice
+    target_field: domain
+    options:
+      - id: DOMAIN_CONTENT_SIDEHUSTLE
+        label: 内容副业
+        description: 通过内容做冷启动、涨粉或轻变现。
+        maps_to:
+          domain: 内容副业
+      - id: DOMAIN_CONTENT_ECOM
+        label: 内容电商
+        description: 通过内容做选品、带货和成交转化。
+        maps_to:
+          domain: 内容电商
+      - id: DOMAIN_KNOWLEDGE
+        label: 副业教育 / 知识付费
+        description: 围绕方法论、课程、社群做收费验证和承接。
+        maps_to:
+          domain: 副业教育 / 知识付费
+      - id: DOMAIN_AI_VIDEO
+        label: AI视频内容创业
+        description: 围绕 AI 视频验证、复刻和量产做内容创业。
+        maps_to:
+          domain: AI视频内容创业
+
+  - id: constraint_ids
+    order: 5
+    title: 问题5
+    prompt: 当前最关键的资源约束是什么（可多选）
+    answer_type: multi_choice
+    target_field: constraints
+    options:
+      - id: C001
+        label: 零预算
+        description: 当前基本不打算投入广告或重型系统成本。
+        maps_to:
+          constraint: 零预算
+      - id: C002
+        label: 每天2小时
+        description: 每天只能稳定投入 2 小时左右。
+        maps_to:
+          constraint: 每天可投入2小时
+      - id: C003
+        label: 启动资金<2000元
+        description: 适合低资源冷启动，不适合重系统和重投流。
+        maps_to:
+          constraint: 启动资金<2000元
+      - id: C004
+        label: 当前无稳定正反馈
+        description: 还没有拿到稳定评论、私信、留资或付款信号。
+        maps_to:
+          constraint: 当前还没有稳定正反馈
+      - id: C005
+        label: 需要验证是否愿意付费
+        description: 重点不是流量，而是验证真实付款意愿。
+        maps_to:
+          constraint: 需要确认用户是否真的愿意付费
+      - id: C006
+        label: 不想真人出镜
+        description: 倾向录屏、素材型或 AI 驱动内容。
+        maps_to:
+          constraint: 不想真人出镜
+      - id: C007
+        label: 有播放但不出单
+        description: 内容有流量，但当前转化效率不足。
+        maps_to:
+          constraint: 当前核心问题是有流量但不出单
+      - id: C008
+        label: 需要先判断热点是否还有流量
+        description: 不想凭印象开做，需要先做题材和 IP 验证。
+        maps_to:
+          constraint: 需要先判断热点 IP 当前是否仍有流量

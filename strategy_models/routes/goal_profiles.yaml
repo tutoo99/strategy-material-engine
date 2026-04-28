@@ -1,0 +1,175 @@
+goals:
+  - goal_id: goal_initial_precise_traffic
+    label: 获取初始精准流量
+    aliases:
+      - 获取初始精准流量
+      - 初始精准流量
+      - 初始流量
+      - 冷启动流量
+      - 第一批精准流量
+      - 公域破冰
+      - B站起号
+    primary_strategies:
+      - 冷启动验证
+      - 长尾流量
+    secondary_strategies:
+      - 强结果选题
+      - 细分选题
+    preferred_platforms:
+      - B站
+    preferred_user_types:
+      - 个人副业者
+      - 职场新人
+      - 内容创业者
+    preferred_domains:
+      - 内容副业
+      - 副业教育 / 知识付费
+      - 内容电商
+    preferred_case_refs:
+      - cases/bilibili_case_approved.md
+      - cases/在B站教年轻人赚钱月入三万，从0成为数字游民，全流程底层逻辑分享.md
+    risk_notes:
+      - 没有真实结果时不要滥用强结果标题。
+      - 预算和时间有限时，不要同时开多个承接入口。
+    feedback_metrics:
+      - 内容产出数
+      - 首轮播放 / 点击
+      - 高意图评论 / 私信
+      - 首次留资数
+  - goal_id: goal_seed_user_validation
+    label: 种子用户付费验证
+    aliases:
+      - 种子用户付费验证
+      - 需求验证
+      - 收费验证
+      - 前端付费验证
+      - 种子用户验证
+    primary_strategies:
+      - 种子用户验证
+    secondary_strategies:
+      - 冷启动验证
+      - 高客单承接
+    preferred_platforms:
+      - 微信
+      - 公众号
+      - B站
+    preferred_user_types:
+      - 副业教育创作者
+      - 知识付费创业者
+      - 个人副业者
+    preferred_domains:
+      - 副业教育 / 知识付费
+    preferred_case_refs:
+      - cases/在B站教年轻人赚钱月入三万，从0成为数字游民，全流程底层逻辑分享.md
+    risk_notes:
+      - 只收口头反馈不收钱，不算完成验证。
+      - 样本来源过于单一时，容易高估需求强度。
+    feedback_metrics:
+      - 邀约人数
+      - 试听 / 试用人数
+      - 真实付款人数
+      - 平均愿付价格
+  - goal_id: goal_private_conversion
+    label: 单入口私域承接
+    aliases:
+      - 单入口私域承接
+      - 私域承接
+      - 私域收口
+      - 统一入口承接
+      - 课程交付承接
+      - 私域转化优化
+    primary_strategies:
+      - 单入口承接
+    secondary_strategies:
+      - 高客单承接
+      - 种子用户验证
+    preferred_platforms:
+      - 微信
+      - 公众号
+      - 小鹅通
+    preferred_user_types:
+      - 知识付费创业者
+      - 个人副业者
+    preferred_domains:
+      - 副业教育 / 知识付费
+    preferred_case_refs:
+      - cases/在B站教年轻人赚钱月入三万，从0成为数字游民，全流程底层逻辑分享.md
+    risk_notes:
+      - 还没出现承接瓶颈前，不要提前上重型系统。
+      - 入口越多，人工解释成本越高。
+    feedback_metrics:
+      - 留资后资料追问次数
+      - 支付转化率
+      - 高客单申请数
+      - 私聊重复解释次数
+  - goal_id: goal_bilibili_goods_conversion
+    label: B站带货转化
+    aliases:
+      - B站带货转化
+      - B站带货
+      - 带货转化
+      - 评论区转化
+      - 蓝链转化
+      - 大促转化
+    primary_strategies:
+      - 选品策略
+      - 录屏内容
+    secondary_strategies:
+      - 评论区转化
+      - 营销节点
+    preferred_platforms:
+      - B站
+    preferred_user_types:
+      - 内容副业者
+      - 电商带货创作者
+      - 个人副业者
+    preferred_domains:
+      - 内容电商
+      - 内容副业
+    preferred_case_refs:
+      - cases/B站悬赏带货实战手册.md
+      - cases/bilibili_case_approved.md
+      - cases/bilibili_haowu_gmv54w.md
+    risk_notes:
+      - 没有选品逻辑时，评论区优化无法单独救活转化。
+      - 大促节点只能放大已有路径，不能替代基本功。
+    feedback_metrics:
+      - 选品库数量
+      - 视频点击率
+      - 评论区互动率
+      - 蓝链点击 / 成交
+  - goal_id: goal_ai_video_production
+    label: AI视频快速出片
+    aliases:
+      - AI视频快速出片
+      - AI视频出片
+      - YouTube AI视频
+      - 短视频复刻
+      - 真人AI视频
+      - 爆款复刻
+    primary_strategies:
+      - IP验证
+      - 脚本挖掘
+    secondary_strategies:
+      - 分镜拆解
+      - AI视频生成
+      - 节奏剪辑
+    preferred_platforms:
+      - YouTube
+    preferred_user_types:
+      - AI内容创业者
+      - YouTube 创作者
+      - 新手创作者
+    preferred_domains:
+      - AI视频内容创业
+    preferred_case_refs:
+      - cases/youtube_seedance2真人爆款视频.md
+    risk_notes:
+      - 没做 IP 验证就直接生成，极易白费生成成本。
+      - AI 分镜和镜头草稿必须人工校对，不能直出。
+    feedback_metrics:
+      - 已验证 IP 数
+      - 已拆脚本数
+      - 完成分镜数
+      - 7 天出片数
+

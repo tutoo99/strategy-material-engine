@@ -1,0 +1,207 @@
+situations:
+  - situation_id: S001
+    label: 个人副业者
+    title: 个人副业者（低资源启动情境）
+    summary: 低预算、时间碎片化、单人作战，需要先用轻量动作拿到真实反馈的启动情境。
+    resource_features: [时间碎片化, 资金有限（<2000元）, 单人作战]
+    skill_features: [通常有一项专业技能或真实经历, 缺乏系统营销和承接能力]
+    psychological_features: [追求确定性, 试错成本敏感, 需要快速正反馈]
+    default_constraints: [启动资金<2000元, 日均可用时间<3小时]
+    representative_case_refs:
+      - cases/在B站教年轻人赚钱月入三万，从0成为数字游民，全流程底层逻辑分享.md
+      - cases/bilibili_case_approved.md
+    preferred_strategy_rules:
+      - strategy_ref: 冷启动验证
+        reason: 低成本、低门槛、能最快拿到第一批真实反馈。
+      - strategy_ref: 强结果选题
+        reason: 适合用真实经历快速筛出高意图用户。
+      - strategy_ref: 长尾流量
+        reason: 预算有限时，更适合做能持续复利的低成本流量路径。
+    not_suitable_strategy_rules:
+      - strategy_ref: 矩阵运营
+        reason: 单条路径还没跑通时，不要提前开矩阵，复制会放大试错成本。
+        fallback_strategy_refs: [冷启动验证, 长尾流量]
+      - strategy_ref: 营销节点
+        reason: 基础选品和转化没打通前，节点打法无法替代基本功。
+        fallback_strategy_refs: [细分选题, 选品策略]
+      - strategy_ref: 高客单承接
+        reason: 前端验证和基础成交未完成前，直接推高客单会拉高决策门槛。
+        fallback_strategy_refs: [种子用户验证, 单入口承接]
+  - situation_id: S002
+    label: 职场新人
+    title: 职场新人（低试错副业情境）
+    summary: 主业刚起步、预算和时间都紧，需要先验证需求真实性和个人可执行性的情境。
+    resource_features: [主业时间占用高, 启动资金有限（<1500元）, 单人启动]
+    skill_features: [有学习意愿, 行业经验有限, 缺少系统商业方法]
+    psychological_features: [更看重低风险尝试, 害怕长期无反馈, 需要可复制的起步路径]
+    default_constraints: [启动资金<1500元, 每周可投入8小时以内]
+    representative_case_refs:
+      - cases/在B站教年轻人赚钱月入三万，从0成为数字游民，全流程底层逻辑分享.md
+    preferred_strategy_rules:
+      - strategy_ref: 冷启动验证
+        reason: 最适合先验证需求和个人执行力，而不是先扩规模。
+      - strategy_ref: 强结果选题
+        reason: 更容易借真实转变和成长叙事切入目标人群。
+    not_suitable_strategy_rules:
+      - strategy_ref: 矩阵运营
+        reason: 主业占据大部分时间时，多账号运营会让执行直接失控。
+        fallback_strategy_refs: [冷启动验证]
+      - strategy_ref: 高客单承接
+        reason: 自己还没跑通基础验证前，不适合直接设计高客单成交路径。
+        fallback_strategy_refs: [种子用户验证]
+  - situation_id: S003
+    label: 内容创业者
+    title: 内容创业者（内容驱动变现情境）
+    summary: 已经愿意长期做内容，但需要把内容破冰、筛选和承接结构连起来的情境。
+    resource_features: [可持续做内容, 预算中低, 可接受迭代试错]
+    skill_features: [有一定表达或内容生产能力, 商业化结构未完全打通]
+    psychological_features: [愿意公开表达, 需要更明确的变现路径, 在意内容与成交的一致性]
+    default_constraints: [优先公域验证, 不同时开启多个承接入口]
+    representative_case_refs:
+      - cases/在B站教年轻人赚钱月入三万，从0成为数字游民，全流程底层逻辑分享.md
+      - cases/bilibili_case_approved.md
+    preferred_strategy_rules:
+      - strategy_ref: 强结果选题
+        reason: 内容创业的第一步是先完成精准破冰，而不是泛流量曝光。
+    not_suitable_strategy_rules:
+      - strategy_ref: 高客单承接
+        reason: 前端内容和低价验证品未打通时，不适合先推高客单。
+        fallback_strategy_refs: [冷启动验证, 种子用户验证]
+  - situation_id: S004
+    label: 内容副业者
+    title: 内容副业者（内容验证到转化情境）
+    summary: 已经在做内容副业，但需要在选题、搜索和承接之间找到更稳的增长路径。
+    resource_features: [内容投入持续但预算有限, 可投入固定时间块, 个人或小规模协作]
+    skill_features: [会做内容, 懂基础平台操作, 转化体系不稳定]
+    psychological_features: [希望内容长期复利, 不愿纯赌爆款, 关注效率和复用]
+    default_constraints: [优先搜索和细分场景, 不靠纯热点驱动]
+    representative_case_refs:
+      - cases/B站悬赏带货实战手册.md
+      - cases/bilibili_case_approved.md
+    preferred_strategy_rules:
+      - strategy_ref: 长尾流量
+        reason: 更适合先把稳定的低成本流量做厚。
+      - strategy_ref: 细分选题
+        reason: 在竞争类目中切窄切深，比继续泛讲更有效。
+      - strategy_ref: 评论区转化
+        reason: 当已有播放时，应优先修补转化动作而不是盲目扩量。
+    not_suitable_strategy_rules:
+      - strategy_ref: 高客单承接
+        reason: 内容副业路径还没形成稳定前端成交前，不适合先推高客单。
+        fallback_strategy_refs: [评论区转化, 长尾流量]
+  - situation_id: S005
+    label: 电商带货创作者
+    title: 电商带货创作者（内容电商转化情境）
+    summary: 已经明确要做内容电商，重点是把选品、内容、评论区和节点打法串成稳定转化路径。
+    resource_features: [可持续做带货内容, 具备基础选品和平台账号资源, 可接受中等试错]
+    skill_features: [具备基础内容制作能力, 需要强化选品和转化承接]
+    psychological_features: [关注佣金和转化效率, 需要快速验证哪个品能跑, 对平台窗口敏感]
+    default_constraints: [先打通基础选品与转化, 再做节点放大]
+    representative_case_refs:
+      - cases/B站悬赏带货实战手册.md
+      - cases/bilibili_haowu_gmv54w.md
+    preferred_strategy_rules:
+      - strategy_ref: 选品策略
+        reason: 带货结果首先取决于选品逻辑，而不是先堆内容数量。
+      - strategy_ref: 评论区转化
+        reason: 评论区和蓝链承接是内容电商的重要转化入口。
+      - strategy_ref: 营销节点
+        reason: 只有在基础路径跑通后，节点打法才能放大结果。
+    not_suitable_strategy_rules:
+      - strategy_ref: 种子用户验证
+        reason: 内容电商更依赖真实购买和点击行为，而不是近关系收费验证。
+        fallback_strategy_refs: [选品策略, 评论区转化]
+      - strategy_ref: 高客单承接
+        reason: 当前场景的核心是商品成交，不是高客单咨询转化。
+        fallback_strategy_refs: [营销节点, 选品策略]
+  - situation_id: S006
+    label: 知识付费创业者
+    title: 知识付费创业者（验证到承接情境）
+    summary: 需要先验证用户是否愿意付费，再把承接与交付结构收成一条线的情境。
+    resource_features: [可调配微信或内容渠道, 有初步知识产品雏形, 可接受中低预算]
+    skill_features: [有专业知识或方法论, 需要补强产品化与承接设计]
+    psychological_features: [希望尽快确认真实需求, 对错误定位比较敏感, 在意成交确定性]
+    default_constraints: [先收真实付款, 再设计复杂产品梯度]
+    representative_case_refs:
+      - cases/在B站教年轻人赚钱月入三万，从0成为数字游民，全流程底层逻辑分享.md
+    preferred_strategy_rules:
+      - strategy_ref: 种子用户验证
+        reason: 对知识付费而言，真实付款比口头认可更重要。
+      - strategy_ref: 单入口承接
+        reason: 一旦加微和咨询量上涨，必须尽快收敛承接路径。
+      - strategy_ref: 高客单承接
+        reason: 只有在前端验证品跑通后，才适合设计升级路径。
+    not_suitable_strategy_rules:
+      - strategy_ref: 矩阵运营
+        reason: 在产品边界未稳定前，不适合先扩账号矩阵。
+        fallback_strategy_refs: [种子用户验证, 单入口承接]
+      - strategy_ref: 营销节点
+        reason: 没有稳定承接和交付前，节点流量只会放大混乱。
+        fallback_strategy_refs: [单入口承接]
+  - situation_id: S007
+    label: 团队型创作者
+    title: 团队型创作者（可复制放大情境）
+    summary: 已有团队协作能力，目标是把已验证路径做成可复制分发和矩阵化执行。
+    resource_features: [多人协作, 可并行执行, 有一定运营预算]
+    skill_features: [具备内容生产和基本运营能力, 能承接多账号或多链路分工]
+    psychological_features: [更关注放大效率, 能接受中高复杂度系统, 在意复制性]
+    default_constraints: [单条模板先验证可复制，再拆多账号]
+    representative_case_refs:
+      - cases/B站悬赏带货实战手册.md
+    preferred_strategy_rules:
+      - strategy_ref: 矩阵运营
+        reason: 只有团队协作情境更能承受矩阵扩张的执行复杂度。
+      - strategy_ref: 营销节点
+        reason: 节点打法需要团队协同配合内容、评论和选品动作。
+    not_suitable_strategy_rules:
+      - strategy_ref: 种子用户验证
+        reason: 当前阶段的重点是放大已验证路径，不是回到小样本收费验证。
+        fallback_strategy_refs: [矩阵运营, 营销节点]
+  - situation_id: S008
+    label: AI内容创业者
+    title: AI内容创业者（AI视频生产情境）
+    summary: 关注 AI 视频冷启动与量产，重点是先验证 IP，再完成分镜、生成和剪辑的链路。
+    resource_features: [依赖 AI 工具链, 可接受工具学习成本, 对脚本和镜头一致性要求高]
+    skill_features: [具备基础内容审美或脚本判断, 需要工具流程与质量控制]
+    psychological_features: [重视效率但怕白费生成成本, 愿意实验, 对质量波动敏感]
+    default_constraints: [先验证 IP，再投入生成成本]
+    representative_case_refs:
+      - cases/youtube_seedance2真人爆款视频.md
+    preferred_strategy_rules:
+      - strategy_ref: IP验证
+        reason: 先验证热点和题材，才能避免无效生成成本。
+      - strategy_ref: 分镜拆解
+        reason: 只有先把镜头逻辑拆清楚，AI 生成才不会跑偏。
+      - strategy_ref: AI视频生成
+        reason: 当前情境本身就需要把生成流程跑通。
+    not_suitable_strategy_rules:
+      - strategy_ref: 高客单承接
+        reason: 当前重点是内容生产链路，不是知识产品成交结构。
+        fallback_strategy_refs: [IP验证, 脚本挖掘]
+      - strategy_ref: 评论区转化
+        reason: 在 YouTube AI 视频链路里，评论区不是当前主要瓶颈。
+        fallback_strategy_refs: [节奏剪辑, 脚本挖掘]
+  - situation_id: S009
+    label: YouTube 创作者
+    title: YouTube 创作者（YouTube 视频放大量产情境）
+    summary: 需要在 YouTube 平台完成题材筛选、脚本重组、分镜生成和节奏重剪的情境。
+    resource_features: [平台明确, 依赖脚本和视觉产能, 愿意做数据回看]
+    skill_features: [理解 YouTube 内容逻辑, 需要强化 AI 工具流程和镜头拆解]
+    psychological_features: [关注留存和节奏, 对爆款模仿成本敏感, 重视平台匹配]
+    default_constraints: [只做平台和题材明确的量产路径]
+    representative_case_refs:
+      - cases/youtube_seedance2真人爆款视频.md
+    preferred_strategy_rules:
+      - strategy_ref: IP验证
+        reason: YouTube 放量前必须先确认题材仍有流量。
+      - strategy_ref: 脚本挖掘
+        reason: 量产前先把可复爆脚本池做出来。
+      - strategy_ref: 节奏剪辑
+        reason: 最终成片是否成立，取决于节奏重剪而不是只拼镜头。
+    not_suitable_strategy_rules:
+      - strategy_ref: 种子用户验证
+        reason: 当前场景的关键不是近关系收费验证，而是平台内容验证。
+        fallback_strategy_refs: [IP验证, 脚本挖掘]
+      - strategy_ref: 高客单承接
+        reason: 该情境下优先级不在高客单成交设计。
+        fallback_strategy_refs: [分镜拆解, 节奏剪辑]
