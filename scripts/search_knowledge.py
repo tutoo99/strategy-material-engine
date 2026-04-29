@@ -3,27 +3,34 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import math
 import os
 import re
 import time
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from _knowledge_lib import (
     DEFAULT_MODEL_NAME,
     DEFAULT_QUERY_PREFIX,
     DEFAULT_RERANKER_NAME,
-    clamp_candidate_count,
     encode_texts,
     normalize_preview,
     read_faiss_index,
     read_jsonl,
     rerank,
 )
+
+try:
+    from _memory_guard import wait_for_memory_budget
+except Exception:  # pragma: no cover - memory guard is best-effort on non-macOS hosts.
+    wait_for_memory_budget = None  # type: ignore[assignment]
 
 _LATIN_TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9._+-]*")
 _CJK_BLOCK_RE = re.compile(r"[一-鿿]+")
@@ -80,6 +87,215 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 QUERY_PLANNER_RUNTIME_DIR = Path(os.getenv("KNOWLEDGE_QUERY_PLANNER_RUNTIME_DIR", str(SKILL_ROOT / "evals" / "query_planner")))
 _LLM_QUERY_PLANNER_DISABLED_REASON = ""
 _QUERY_PLANNER_CACHE_MEMO: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class SearchProfile:
+    name: str
+    default_device: str = "auto"
+    batch_size: int = 8
+    reranker_batch_size: int = 16
+    rerank_top_k: int = 10**6
+    branch_max: int = 4
+    branch_limit_cap: int = 12
+    candidate_multiplier: int = 8
+    candidate_min: int = 30
+    use_local_lock: bool = False
+    wait_for_memory: bool = False
+    memory_wait_seconds: float = 0.0
+    min_readily_available_mb: float = 2048.0
+    max_compressed_mb: float = 2048.0
+
+
+SEARCH_PROFILES: dict[str, SearchProfile] = {
+    "legacy": SearchProfile(name="legacy"),
+    "local_quality": SearchProfile(
+        name="local_quality",
+        default_device="cpu",
+        batch_size=4,
+        reranker_batch_size=4,
+        rerank_top_k=32,
+        branch_max=4,
+        branch_limit_cap=12,
+        candidate_multiplier=6,
+        candidate_min=24,
+        use_local_lock=True,
+        wait_for_memory=True,
+        memory_wait_seconds=20.0,
+        min_readily_available_mb=2048.0,
+        max_compressed_mb=2048.0,
+    ),
+    "local_fast": SearchProfile(
+        name="local_fast",
+        default_device="cpu",
+        batch_size=4,
+        reranker_batch_size=4,
+        rerank_top_k=0,
+        branch_max=2,
+        branch_limit_cap=8,
+        candidate_multiplier=4,
+        candidate_min=16,
+        use_local_lock=True,
+        wait_for_memory=True,
+        memory_wait_seconds=10.0,
+    ),
+    "local_deep": SearchProfile(
+        name="local_deep",
+        default_device="cpu",
+        batch_size=4,
+        reranker_batch_size=4,
+        rerank_top_k=48,
+        branch_max=4,
+        branch_limit_cap=16,
+        candidate_multiplier=8,
+        candidate_min=32,
+        use_local_lock=True,
+        wait_for_memory=True,
+        memory_wait_seconds=45.0,
+        min_readily_available_mb=3072.0,
+        max_compressed_mb=2048.0,
+    ),
+}
+
+
+@dataclass
+class SearchStats:
+    profile: str
+    started_at: float = field(default_factory=time.time)
+    query_plan_seconds: float = 0.0
+    index_load_seconds: float = 0.0
+    encode_seconds: float = 0.0
+    vector_search_seconds: float = 0.0
+    field_match_seconds: float = 0.0
+    reranker_seconds: float = 0.0
+    memory_wait_seconds: float = 0.0
+    branch_count: int = 0
+    candidates_seen: int = 0
+    reranked_count: int = 0
+    memory_wait_reason: str = ""
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "profile": self.profile,
+            "total_seconds": round(time.time() - self.started_at, 3),
+            "query_plan_seconds": round(self.query_plan_seconds, 3),
+            "index_load_seconds": round(self.index_load_seconds, 3),
+            "encode_seconds": round(self.encode_seconds, 3),
+            "vector_search_seconds": round(self.vector_search_seconds, 3),
+            "field_match_seconds": round(self.field_match_seconds, 3),
+            "reranker_seconds": round(self.reranker_seconds, 3),
+            "memory_wait_seconds": round(self.memory_wait_seconds, 3),
+            "branch_count": self.branch_count,
+            "candidates_seen": self.candidates_seen,
+            "reranked_count": self.reranked_count,
+            "memory_wait_reason": self.memory_wait_reason,
+        }
+
+
+def resolve_search_profile(name: str | None) -> SearchProfile:
+    profile_name = str(name or os.getenv("KNOWLEDGE_SEARCH_PROFILE", "local_quality")).strip() or "local_quality"
+    if profile_name not in SEARCH_PROFILES:
+        raise ValueError(f"未知 search profile: {profile_name}")
+    return SEARCH_PROFILES[profile_name]
+
+
+@contextmanager
+def local_search_lock(root: Path, enabled: bool) -> Iterator[None]:
+    if not enabled:
+        yield
+        return
+    runtime_dir = root / ".runtime"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = runtime_dir / "search_knowledge.lock"
+    with lock_path.open("w", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def compact_long_text(text: Any, limit: int) -> str:
+    return compact_text(str(text or ""))[:limit]
+
+
+def lightweight_item(raw_item: dict[str, Any], asset_type: str) -> dict[str, Any]:
+    item = dict(raw_item)
+    if "body" in item:
+        body = str(item.get("body", ""))
+        item.pop("body", None)
+        if body:
+            item["body_preview"] = compact_long_text(body, 900)
+    if "chunk_text" in item:
+        chunk_text = str(item.get("chunk_text", ""))
+        item.pop("chunk_text", None)
+        if chunk_text:
+            item["chunk_text_preview"] = compact_long_text(chunk_text, 900)
+
+    item["asset_type"] = asset_type
+    if asset_type == "material":
+        item["subtype"] = item.get("subtype") or item.get("type") or "material"
+    elif asset_type == "source":
+        item["subtype"] = item.get("chunk_role") or "source_chunk"
+    elif asset_type == "entity":
+        item["subtype"] = item.get("subtype") or "entity_profile"
+    else:
+        item["subtype"] = item.get("subtype") or "case"
+    return item
+
+
+class SearchContext:
+    def __init__(self, root: Path, profile: SearchProfile, stats: SearchStats | None = None):
+        self.root = root
+        self.profile = profile
+        self.stats = stats
+        self._items: dict[str, list[dict[str, Any]]] = {}
+        self._indexes: dict[str, Any] = {}
+
+    def candidate_count(self, limit: int, item_count: int) -> int:
+        raw_count = max(limit * self.profile.candidate_multiplier, self.profile.candidate_min)
+        return min(raw_count, item_count)
+
+    def load_items(self, key: str, relpath: str, asset_type: str) -> list[dict[str, Any]]:
+        if key in self._items:
+            return self._items[key]
+        started = time.time()
+        path = self.root / relpath
+        rows = read_jsonl(path)
+        items = [lightweight_item(row, asset_type) for row in rows]
+        self._items[key] = items
+        if self.stats:
+            self.stats.index_load_seconds += time.time() - started
+        return items
+
+    def load_index(self, key: str, relpath: str) -> Any | None:
+        if key in self._indexes:
+            return self._indexes[key]
+        path = self.root / relpath
+        if not path.exists():
+            return None
+        started = time.time()
+        index = read_faiss_index(path)
+        self._indexes[key] = index
+        if self.stats:
+            self.stats.index_load_seconds += time.time() - started
+        return index
+
+    @property
+    def case_items(self) -> list[dict[str, Any]]:
+        return self.load_items("cases", "index/cases/cases_vector_meta.jsonl", "case")
+
+    @property
+    def material_items(self) -> list[dict[str, Any]]:
+        return self.load_items("materials", "index/materials/materials_meta.jsonl", "material")
+
+    @property
+    def entity_items(self) -> list[dict[str, Any]]:
+        return self.load_items("entities", "index/entities/entities_meta.jsonl", "entity")
+
+    @property
+    def source_items(self) -> list[dict[str, Any]]:
+        return self.load_items("sources", "index/sources/source_chunks_meta.jsonl", "source")
 
 
 def normalize_scores(values: list[float]) -> list[float]:
@@ -1312,14 +1528,14 @@ def apply_source_diversity(results: list[dict[str, Any]], *, mode: str, limit: i
 def material_doc(item: dict[str, Any]) -> str:
     parts = [str(item.get("primary_claim", ""))]
     parts.extend(str(x) for x in item.get("claims", []) if x)
-    body = str(item.get("body", ""))
+    body = str(item.get("body_preview", "") or item.get("body", ""))
     if body:
-        parts.append(body[:500])
-    return " ".join(parts).strip()
+        parts.append(body[:700])
+    return compact_long_text(" ".join(parts), 900)
 
 
 def entity_doc(item: dict[str, Any]) -> str:
-    return " ".join(
+    return compact_long_text(" ".join(
         [
             str(item.get("name", "")),
             str(item.get("title", "")),
@@ -1328,22 +1544,22 @@ def entity_doc(item: dict[str, Any]) -> str:
             str(item.get("achievement_summary", "")),
             str(item.get("methodology_summary", "")),
             " ".join(str(x) for x in item.get("aliases", []) if x),
-            str(item.get("body", ""))[:500],
+            str(item.get("body_preview", "") or item.get("body", ""))[:700],
         ]
-    ).strip()
+    ), 900)
 
 
 def source_doc(item: dict[str, Any]) -> str:
-    return " ".join(
+    return compact_long_text(" ".join(
         [
             str(item.get("title", "")),
             str(item.get("author", "")),
             str(item.get("origin", "")),
             str(item.get("summary", "")),
             str(item.get("chunk_summary", "")),
-            str(item.get("chunk_text", ""))[:500],
+            str(item.get("chunk_text_preview", "") or item.get("chunk_text", ""))[:700],
         ]
-    ).strip()
+    ), 900)
 
 
 def source_field_bonus(item: dict[str, Any], query: str) -> float:
@@ -1381,16 +1597,16 @@ def material_field_bonus(item: dict[str, Any], query: str) -> float:
 
 
 def case_doc(item: dict[str, Any]) -> str:
-    return " ".join(
+    return compact_long_text(" ".join(
         [
             str(item.get("title", "")),
             str(item.get("retrieval_summary", "")),
             str(item.get("result_summary", "")),
             " ".join(str(x) for x in item.get("retrieval_tags", []) if x),
             " ".join(str(x) for x in item.get("source_refs", []) if x),
-            str(item.get("body", ""))[:500],
+            str(item.get("body_preview", "") or item.get("body", ""))[:700],
         ]
-    ).strip()
+    ), 900)
 
 
 def lexical_bonus(item: dict[str, Any], mode: str, lexical_ratio: float) -> float:
@@ -1462,15 +1678,26 @@ def is_low_confidence(item: dict[str, Any], mode: str) -> bool:
     return False
 
 
-def collect_vector_candidates(index_path: Path, meta_path: Path, query_vector, limit: int, asset_type: str) -> list[dict[str, Any]]:
-    if not index_path.exists() or not meta_path.exists():
-        return []
-    items = read_jsonl(meta_path)
+def collect_vector_candidates(
+    context: SearchContext,
+    *,
+    index_key: str,
+    index_relpath: str,
+    items: list[dict[str, Any]],
+    query_vector,
+    limit: int,
+    asset_type: str,
+) -> list[dict[str, Any]]:
     if not items:
         return []
-    index = read_faiss_index(index_path)
-    candidate_count = min(clamp_candidate_count(limit), len(items))
+    index = context.load_index(index_key, index_relpath)
+    if index is None:
+        return []
+    candidate_count = context.candidate_count(limit, len(items))
+    started = time.time()
     scores, indices = index.search(query_vector, candidate_count)
+    if context.stats:
+        context.stats.vector_search_seconds += time.time() - started
     candidates = []
     for raw_score, idx in zip(scores[0].tolist(), indices[0].tolist()):
         if idx < 0 or idx >= len(items):
@@ -1488,13 +1715,12 @@ def collect_vector_candidates(index_path: Path, meta_path: Path, query_vector, l
     return candidates
 
 
-def collect_source_field_candidates(meta_path: Path, query: str, limit: int) -> list[dict[str, Any]]:
-    if not meta_path.exists():
-        return []
-    items = read_jsonl(meta_path)
+def collect_source_field_candidates(context: SearchContext, query: str, limit: int) -> list[dict[str, Any]]:
+    items = context.source_items
     if not items:
         return []
 
+    started = time.time()
     candidates: list[dict[str, Any]] = []
     for raw_item in items:
         item = dict(raw_item)
@@ -1516,16 +1742,17 @@ def collect_source_field_candidates(meta_path: Path, query: str, limit: int) -> 
         item["_vector_score"] = 0.34 + overlap * 0.18 + author_hit * 0.16
         candidates.append(item)
     candidates.sort(key=lambda current: current["_vector_score"], reverse=True)
+    if context.stats:
+        context.stats.field_match_seconds += time.time() - started
     return candidates[: max(limit * 3, 12)]
 
 
-def collect_material_field_candidates(meta_path: Path, query: str, limit: int) -> list[dict[str, Any]]:
-    if not meta_path.exists():
-        return []
-    items = read_jsonl(meta_path)
+def collect_material_field_candidates(context: SearchContext, query: str, limit: int) -> list[dict[str, Any]]:
+    items = context.material_items
     if not items:
         return []
 
+    started = time.time()
     candidates: list[dict[str, Any]] = []
     for raw_item in items:
         item = dict(raw_item)
@@ -1547,16 +1774,17 @@ def collect_material_field_candidates(meta_path: Path, query: str, limit: int) -
         item["_vector_score"] = 0.36 + overlap * 0.22 + primary_hit * 0.18
         candidates.append(item)
     candidates.sort(key=lambda current: current["_vector_score"], reverse=True)
+    if context.stats:
+        context.stats.field_match_seconds += time.time() - started
     return candidates[: max(limit * 3, 12)]
 
 
-def collect_entity_field_candidates(meta_path: Path, query: str, limit: int) -> list[dict[str, Any]]:
-    if not meta_path.exists():
-        return []
-    items = read_jsonl(meta_path)
+def collect_entity_field_candidates(context: SearchContext, query: str, limit: int) -> list[dict[str, Any]]:
+    items = context.entity_items
     if not items:
         return []
 
+    started = time.time()
     candidates: list[dict[str, Any]] = []
     for raw_item in items:
         item = dict(raw_item)
@@ -1581,11 +1809,13 @@ def collect_entity_field_candidates(meta_path: Path, query: str, limit: int) -> 
         item["_vector_score"] = 0.36 + overlap * 0.22 + name_hit * 0.18
         candidates.append(item)
     candidates.sort(key=lambda current: current["_vector_score"], reverse=True)
+    if context.stats:
+        context.stats.field_match_seconds += time.time() - started
     return candidates[: max(limit * 3, 12)]
 
 
 def _search_knowledge_single(
-    root: Path,
+    context: SearchContext,
     query: str,
     mode: str,
     limit: int,
@@ -1594,22 +1824,27 @@ def _search_knowledge_single(
     device: str,
     batch_size: int,
     min_score: float | None = None,
+    query_vector: Any | None = None,
 ) -> list[dict[str, Any]]:
-    query_vector = encode_texts(
-        [query],
-        model_name=model,
-        device=device,
-        batch_size=batch_size,
-        query_prefix=DEFAULT_QUERY_PREFIX,
-    )
+    if query_vector is None:
+        started = time.time()
+        query_vector = encode_texts(
+            [query],
+            model_name=model,
+            device=device,
+            batch_size=batch_size,
+            query_prefix=DEFAULT_QUERY_PREFIX,
+        )
+        if context.stats:
+            context.stats.encode_seconds += time.time() - started
     candidates: list[dict[str, Any]] = []
-    candidates.extend(collect_vector_candidates(root / "index/cases/cases.faiss", root / "index/cases/cases_vector_meta.jsonl", query_vector, limit, "case"))
-    candidates.extend(collect_vector_candidates(root / "index/materials/materials.faiss", root / "index/materials/materials_meta.jsonl", query_vector, limit, "material"))
-    candidates.extend(collect_vector_candidates(root / "index/entities/entities.faiss", root / "index/entities/entities_meta.jsonl", query_vector, limit, "entity"))
-    candidates.extend(collect_vector_candidates(root / "index/sources/source_chunks.faiss", root / "index/sources/source_chunks_meta.jsonl", query_vector, limit, "source"))
-    candidates.extend(collect_material_field_candidates(root / "index/materials/materials_meta.jsonl", query, limit))
-    candidates.extend(collect_entity_field_candidates(root / "index/entities/entities_meta.jsonl", query, limit))
-    candidates.extend(collect_source_field_candidates(root / "index/sources/source_chunks_meta.jsonl", query, limit))
+    candidates.extend(collect_vector_candidates(context, index_key="cases", index_relpath="index/cases/cases.faiss", items=context.case_items, query_vector=query_vector, limit=limit, asset_type="case"))
+    candidates.extend(collect_vector_candidates(context, index_key="materials", index_relpath="index/materials/materials.faiss", items=context.material_items, query_vector=query_vector, limit=limit, asset_type="material"))
+    candidates.extend(collect_vector_candidates(context, index_key="entities", index_relpath="index/entities/entities.faiss", items=context.entity_items, query_vector=query_vector, limit=limit, asset_type="entity"))
+    candidates.extend(collect_vector_candidates(context, index_key="sources", index_relpath="index/sources/source_chunks.faiss", items=context.source_items, query_vector=query_vector, limit=limit, asset_type="source"))
+    candidates.extend(collect_material_field_candidates(context, query, limit))
+    candidates.extend(collect_entity_field_candidates(context, query, limit))
+    candidates.extend(collect_source_field_candidates(context, query, limit))
     if not candidates:
         return []
 
@@ -1622,6 +1857,8 @@ def _search_knowledge_single(
         if existing is None or float(item.get("_vector_score", 0.0)) > float(existing.get("_vector_score", 0.0)):
             merged_candidates[key] = item
     candidates = list(merged_candidates.values())
+    if context.stats:
+        context.stats.candidates_seen += len(candidates)
 
     vector_norms = normalize_scores([item["_vector_score"] for item in candidates])
     for item, norm in zip(candidates, vector_norms):
@@ -1629,9 +1866,19 @@ def _search_knowledge_single(
         item["_vector_abs"] = calibrate_vector_score(item["_vector_score"])
 
     use_reranker = reranker_name is not None and len(candidates) > 1
+    selected_for_rerank: list[dict[str, Any]] = []
     if use_reranker:
+        rerank_top_k = context.profile.rerank_top_k
+        selected_for_rerank = sorted(
+            candidates,
+            key=lambda item: (
+                group_priority(item, mode),
+                -float(item.get("_vector_norm", 0.0)),
+                -float(item.get("_vector_score", 0.0)),
+            ),
+        )[:rerank_top_k] if rerank_top_k > 0 else []
         docs = []
-        for item in candidates:
+        for item in selected_for_rerank:
             if item["asset_type"] == "case":
                 docs.append(case_doc(item))
             elif item["asset_type"] == "entity":
@@ -1640,8 +1887,28 @@ def _search_knowledge_single(
                 docs.append(material_doc(item))
             else:
                 docs.append(source_doc(item))
-        reranker_scores = rerank(query, docs, model_name=reranker_name, device=device)
-        reranker_norms = normalize_scores(reranker_scores)
+        started = time.time()
+        selected_scores = rerank(
+            query,
+            docs,
+            model_name=reranker_name,
+            device=device,
+            batch_size=context.profile.reranker_batch_size,
+        ) if docs else []
+        if context.stats:
+            context.stats.reranker_seconds += time.time() - started
+            context.stats.reranked_count += len(selected_scores)
+        selected_norms = normalize_scores(selected_scores)
+        selected_by_key = {
+            str(item.get("id") or item.get("path")): (score, norm)
+            for item, score, norm in zip(selected_for_rerank, selected_scores, selected_norms)
+        }
+        reranker_scores = []
+        reranker_norms = []
+        for item in candidates:
+            score, norm = selected_by_key.get(str(item.get("id") or item.get("path")), (0.0, 0.0))
+            reranker_scores.append(score)
+            reranker_norms.append(norm)
     else:
         reranker_scores = [0.0 for _ in candidates]
         reranker_norms = [0.0 for _ in candidates]
@@ -1684,19 +1951,19 @@ def _search_knowledge_single(
         )
 
         if item["asset_type"] == "case":
-            item["preview"] = item.get("preview") or normalize_preview(item.get("retrieval_summary", "") or item.get("body", ""))
+            item["preview"] = item.get("preview") or normalize_preview(item.get("retrieval_summary", "") or item.get("body_preview", "") or item.get("body", ""))
             item["why_matched"] = item.get("retrieval_summary") or item.get("result_summary", "")
             item["source_refs"] = item.get("source_refs", [])
         elif item["asset_type"] == "entity":
-            item["preview"] = normalize_preview(item.get("summary", "") or item.get("body", ""))
+            item["preview"] = normalize_preview(item.get("summary", "") or item.get("body_preview", "") or item.get("body", ""))
             item["why_matched"] = item.get("summary", "") or item.get("name", "")
             item["source_refs"] = item.get("source_refs", [])
         elif item["asset_type"] == "material":
-            item["preview"] = normalize_preview(item.get("body", ""))
+            item["preview"] = normalize_preview(item.get("body_preview", "") or item.get("body", ""))
             item["why_matched"] = item.get("primary_claim", "")
             item["source_refs"] = item.get("source_refs", [])
         else:
-            item["preview"] = normalize_preview(item.get("chunk_text", ""))
+            item["preview"] = normalize_preview(item.get("chunk_text_preview", "") or item.get("chunk_text", ""))
             item["why_matched"] = item.get("chunk_summary", "")
             item["source_refs"] = [item.get("path", "")]
 
@@ -1897,6 +2164,74 @@ def aggregate_person_intro_results(
     return combined[:limit]
 
 
+def rerank_merged_results(
+    *,
+    query: str,
+    results: list[dict[str, Any]],
+    context: SearchContext,
+    mode: str,
+    reranker_name: str | None,
+    device: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    if not reranker_name or len(results) <= 1 or context.profile.rerank_top_k <= 0:
+        return apply_source_diversity(results, mode=mode, limit=limit)
+
+    selected = sorted(
+        results,
+        key=lambda item: (
+            group_priority(item, mode),
+            -float(item.get("_score", 0.0)),
+            -float(item.get("_vector_score", 0.0)),
+        ),
+    )[: context.profile.rerank_top_k]
+    docs: list[str] = []
+    for item in selected:
+        if item["asset_type"] == "case":
+            docs.append(case_doc(item))
+        elif item["asset_type"] == "entity":
+            docs.append(entity_doc(item))
+        elif item["asset_type"] == "material":
+            docs.append(material_doc(item))
+        else:
+            docs.append(source_doc(item))
+    if not docs:
+        return apply_source_diversity(results, mode=mode, limit=limit)
+
+    started = time.time()
+    scores = rerank(
+        query,
+        docs,
+        model_name=reranker_name,
+        device=device,
+        batch_size=context.profile.reranker_batch_size,
+    )
+    if context.stats:
+        context.stats.reranker_seconds += time.time() - started
+        context.stats.reranked_count += len(scores)
+
+    norms = normalize_scores(scores)
+    by_key = {
+        str(item.get("id") or item.get("path")): (score, norm)
+        for item, score, norm in zip(selected, scores, norms)
+    }
+    for item in results:
+        key = str(item.get("id") or item.get("path"))
+        if key not in by_key:
+            continue
+        score, norm = by_key[key]
+        old_abs = float(item.get("_reranker_abs", 0.0) or 0.0)
+        old_norm = float(item.get("_reranker_norm", 0.0) or 0.0)
+        new_abs = calibrate_reranker_score(score)
+        item["_reranker_score"] = score
+        item["_reranker_norm"] = norm
+        item["_reranker_abs"] = new_abs
+        item["_score"] = float(item.get("_score", 0.0)) - 0.25 * old_norm - 0.25 * old_abs + 0.25 * norm + 0.25 * new_abs
+
+    results.sort(key=lambda item: (group_priority(item, mode), -float(item.get("_score", 0.0))))
+    return apply_source_diversity(results, mode=mode, limit=limit)
+
+
 def search_knowledge(
     root: Path,
     query: str,
@@ -1911,60 +2246,138 @@ def search_knowledge(
     context_info: str | None = None,
     enable_query_rewrite: bool = True,
     planner_provider: str = QUERY_PLANNER_PROVIDER,
+    profile_name: str | None = None,
 ) -> list[dict[str, Any]]:
-    query_plan = build_query_plan(
-        query,
-        mode=mode,
-        conversation_history=conversation_history,
-        context_info=context_info,
-        planner_provider=planner_provider,
-        root=root,
-    )
-    effective_mode = query_plan.get("search_mode", mode) if enable_query_rewrite else mode
-    if not effective_mode:
-        effective_mode = mode
+    profile = resolve_search_profile(profile_name)
+    stats = SearchStats(profile=profile.name)
+    resolved_device = device if device != "auto" else profile.default_device
+    resolved_batch_size = batch_size if batch_size else profile.batch_size
+    effective_reranker_name = reranker_name if profile.rerank_top_k > 0 else None
 
-    if not enable_query_rewrite:
-        results = _search_knowledge_single(root, query, effective_mode, limit, model, reranker_name, device, batch_size, min_score)
-        for item in results:
-            item["_query_plan"] = query_plan
-            item["_query_matches"] = [{"query": query, "intent": "原始查询", "source": "original", "weight": 1.0, "score": round(float(item.get("_score", 0.0)), 6)}]
-        return results
-
-    branch_specs = list(query_plan.get("rewrites", [])) or [
-        {"query": normalize_query_text(query), "intent": "原始查询", "weight": 1.0, "source": "original", "reason": "fallback"}
-    ]
-
-    merged_candidates: list[dict[str, Any]] = []
-    branch_limit = min(max(limit * 2, limit + 2), 12)
-    for branch in branch_specs[:4]:
-        branch_query = str(branch.get("query", "")).strip()
-        if not branch_query:
-            continue
-        branch_weight = float(branch.get("weight", 1.0) or 1.0)
-        branch_results = _search_knowledge_single(root, branch_query, effective_mode, branch_limit, model, reranker_name, device, batch_size, min_score)
-        for rank, item in enumerate(branch_results):
-            enriched = dict(item)
-            enriched["_branch_score"] = float(item.get("_score", 0.0))
-            enriched["_matched_query"] = branch_query
-            enriched["_matched_intent"] = branch.get("intent", "")
-            enriched["_matched_query_source"] = branch.get("source", "rewrite")
-            enriched["_matched_query_weight"] = branch_weight
-            enriched["_score"] = (
-                float(item.get("_score", 0.0)) * (0.88 + 0.12 * branch_weight)
-                + (0.04 if branch.get("source") == "original" else 0.015)
-                - rank * 0.003
+    with local_search_lock(root, profile.use_local_lock):
+        if profile.wait_for_memory and wait_for_memory_budget is not None:
+            ok, reason, waited = wait_for_memory_budget(
+                timeout_seconds=profile.memory_wait_seconds,
+                min_readily_available_mb=profile.min_readily_available_mb,
+                max_compressed_mb=profile.max_compressed_mb,
             )
-            enriched["_query_plan"] = query_plan
-            merged_candidates.append(enriched)
+            stats.memory_wait_seconds += waited
+            if not ok:
+                stats.memory_wait_reason = reason
 
-    if not merged_candidates:
-        return []
+        context = SearchContext(root, profile, stats)
+        started = time.time()
+        query_plan = build_query_plan(
+            query,
+            mode=mode,
+            conversation_history=conversation_history,
+            context_info=context_info,
+            planner_provider=planner_provider,
+            root=root,
+        )
+        stats.query_plan_seconds += time.time() - started
+        effective_mode = query_plan.get("search_mode", mode) if enable_query_rewrite else mode
+        if not effective_mode:
+            effective_mode = mode
 
-    merged_results = merge_search_results(merged_candidates, mode=effective_mode, limit=limit, query_plan=query_plan)
-    if str(query_plan.get("intent", query_plan.get("query_type", ""))).strip() == "person_intro":
-        return aggregate_person_intro_results(merged_results, query_plan=query_plan, limit=limit)
-    return merged_results
+        if not enable_query_rewrite:
+            results = _search_knowledge_single(
+                context,
+                query,
+                effective_mode,
+                limit,
+                model,
+                effective_reranker_name,
+                resolved_device,
+                resolved_batch_size,
+                min_score,
+            )
+            for item in results:
+                item["_query_plan"] = query_plan
+                item["_query_matches"] = [{"query": query, "intent": "原始查询", "source": "original", "weight": 1.0, "score": round(float(item.get("_score", 0.0)), 6)}]
+                item["_search_stats"] = stats.as_dict()
+            return results
+
+        branch_specs = list(query_plan.get("rewrites", [])) or [
+            {"query": normalize_query_text(query), "intent": "原始查询", "weight": 1.0, "source": "original", "reason": "fallback"}
+        ]
+        branch_specs = branch_specs[: profile.branch_max]
+        stats.branch_count = len(branch_specs)
+
+        branch_queries: list[str] = []
+        filtered_branch_specs: list[dict[str, Any]] = []
+        for branch in branch_specs:
+            branch_query = str(branch.get("query", "")).strip()
+            if not branch_query:
+                continue
+            branch_queries.append(branch_query)
+            filtered_branch_specs.append(branch)
+
+        if not branch_queries:
+            return []
+
+        started = time.time()
+        branch_vectors = encode_texts(
+            branch_queries,
+            model_name=model,
+            device=resolved_device,
+            batch_size=resolved_batch_size,
+            query_prefix=DEFAULT_QUERY_PREFIX,
+        )
+        stats.encode_seconds += time.time() - started
+
+        merged_candidates: list[dict[str, Any]] = []
+        branch_limit = min(max(limit * 2, limit + 2), profile.branch_limit_cap)
+        for branch_index, branch in enumerate(filtered_branch_specs):
+            branch_query = branch_queries[branch_index]
+            branch_weight = float(branch.get("weight", 1.0) or 1.0)
+            branch_results = _search_knowledge_single(
+                context,
+                branch_query,
+                effective_mode,
+                branch_limit,
+                model,
+                None,
+                resolved_device,
+                resolved_batch_size,
+                min_score,
+                query_vector=branch_vectors[branch_index : branch_index + 1],
+            )
+            for rank, item in enumerate(branch_results):
+                enriched = dict(item)
+                enriched["_branch_score"] = float(item.get("_score", 0.0))
+                enriched["_matched_query"] = branch_query
+                enriched["_matched_intent"] = branch.get("intent", "")
+                enriched["_matched_query_source"] = branch.get("source", "rewrite")
+                enriched["_matched_query_weight"] = branch_weight
+                enriched["_score"] = (
+                    float(item.get("_score", 0.0)) * (0.88 + 0.12 * branch_weight)
+                    + (0.04 if branch.get("source") == "original" else 0.015)
+                    - rank * 0.003
+                )
+                enriched["_query_plan"] = query_plan
+                merged_candidates.append(enriched)
+
+        if not merged_candidates:
+            return []
+
+        pre_rerank_limit = max(limit, profile.rerank_top_k if effective_reranker_name else limit)
+        merged_results = merge_search_results(merged_candidates, mode=effective_mode, limit=pre_rerank_limit, query_plan=query_plan)
+        merged_results = rerank_merged_results(
+            query=query,
+            results=merged_results,
+            context=context,
+            mode=effective_mode,
+            reranker_name=effective_reranker_name,
+            device=resolved_device,
+            limit=limit,
+        )
+        if str(query_plan.get("intent", query_plan.get("query_type", ""))).strip() == "person_intro":
+            merged_results = aggregate_person_intro_results(merged_results, query_plan=query_plan, limit=limit)
+        stats_payload = stats.as_dict()
+        for item in merged_results:
+            item["_search_stats"] = stats_payload
+        return merged_results
 
 
 def main() -> None:
@@ -1976,7 +2389,8 @@ def main() -> None:
     parser.add_argument("--model", default=DEFAULT_MODEL_NAME)
     parser.add_argument("--reranker", default=DEFAULT_RERANKER_NAME, help="'none' 可关闭 reranker")
     parser.add_argument("--device", default="auto")
-    parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--batch-size", type=int, default=0, help="0 表示使用 profile 默认 batch size")
+    parser.add_argument("--profile", choices=sorted(SEARCH_PROFILES), default=os.getenv("KNOWLEDGE_SEARCH_PROFILE", "local_quality"))
     parser.add_argument("--min-score", type=float)
     parser.add_argument("--history", action="append", default=[], help="追加一条对话历史，可多次传入")
     parser.add_argument("--context-info", default="", help="额外上下文信息")
@@ -1988,16 +2402,6 @@ def main() -> None:
 
     root = Path(args.root).resolve()
     reranker_name = None if str(args.reranker).lower() in {"none", "false", "0"} else args.reranker
-    query_plan = build_query_plan(
-        args.query,
-        mode=args.mode,
-        conversation_history=list(args.history or []),
-        context_info=args.context_info,
-        planner_provider=args.query_planner_provider,
-        root=root,
-    )
-    if args.show_query_plan:
-        print(json.dumps({"query_plan": query_plan}, ensure_ascii=False))
     results = search_knowledge(
         root,
         args.query,
@@ -2012,7 +2416,11 @@ def main() -> None:
         context_info=args.context_info,
         enable_query_rewrite=not args.disable_query_rewrite,
         planner_provider=args.query_planner_provider,
+        profile_name=args.profile,
     )
+    query_plan = results[0].get("_query_plan", {}) if results else {}
+    if args.show_query_plan:
+        print(json.dumps({"query_plan": query_plan}, ensure_ascii=False))
     for item in results:
         payload = {
             "asset_type": item["asset_type"],
@@ -2049,8 +2457,11 @@ def main() -> None:
             }
             payload["query_matches"] = item.get("_query_matches", [])
             payload["query_plan"] = item.get("_query_plan", query_plan)
+            payload["search_stats"] = item.get("_search_stats", {})
         else:
             payload["query_plan_backend"] = item.get("_query_plan", query_plan).get("planner_backend", query_plan.get("planner_backend"))
+            if item.get("_search_stats"):
+                payload["search_profile"] = item["_search_stats"].get("profile")
         print(json.dumps(payload, ensure_ascii=False))
 
 

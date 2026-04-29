@@ -69,15 +69,98 @@ status: active
 - 构建案例向量索引：`scripts/build_cases_vector_index.py --device cpu --batch-size 2`
 - 构建统一检索视图：`scripts/build_unified_index.py`
 - 一键构建全部：`scripts/build_all_indexes.py`
-## 手动入库流程
+## 输入文件格式预处理
 
-当 `import_source_and_route.py` 不适用时（如 Hermes 直接写文件），手动入库步骤：
+入库前经常需要从各种格式提取纯文本。以下是常用方法：
 
-1. 写 source 到 `sources/` 子目录
-2. 按内容类型写 case draft（`assets/case_drafts/`）或 materials（`assets/materials/{insight,method,data,story,playbook,quote,association}/`）
-3. 标记脏桶 + flush：`cd scripts && python3 -c "from _index_state import mark_dirty; from pathlib import Path; mark_dirty(Path('..').resolve(), 'sources', 'materials', reason='...')"` 然后 `python3 flush_indexes.py --root .. --all`
-4. 搜索验证：`python3 search_knowledge.py "关键词" --mode writing --root ..`
-- 单篇入库后增量更新（推荐）：`scripts/incremental_sources_index.py --root .`
+### HTML → 纯文本
+```bash
+python3 -c "
+from html.parser import HTMLParser
+class T(HTMLParser):
+    def __init__(s):
+        super().__init__()
+        s.text = []
+    def handle_data(s, d):
+        s.text.append(d)
+t = T()
+with open('input.html', 'r') as f:
+    t.feed(f.read())
+print(''.join(t.text))
+"
+```
+
+### PDF → 纯文本
+优先用 skill `pdf-extraction` 或 `pdf-extraction-mineru`（带OCR）。简单场景：
+```bash
+pdftotext input.pdf - 2>/dev/null | head -500
+```
+
+### Excel/CSV → 纯文本
+```bash
+python3 -c "
+import openpyxl
+wb = openpyxl.load_workbook('input.xlsx', read_only=True)
+for ws in wb:
+    for row in ws.iter_rows(values_only=True):
+        print('\t'.join(str(c) if c else '' for c in row))
+"
+```
+
+### 注意事项
+- 提取前先用 `wc -c` 检查文件大小，大于100KB注意截断
+- HTML 用 `HTMLParser` 而不是正则，避免漏标签或误匹配
+- PDF 如果 `pdftotext` 输出乱码，说明是扫描件，走 MinerU 或视觉模型 OCR
+- 提取后的文本用于 source 原文归档和 LLM 分析，不要手动编辑内容
+
+## 手动入库流程（Hermes 直接操作时）
+
+当 `import_source_and_route.py` 不适用时（如 Hermes 直接写文件），完整步骤：
+
+### Step 0：格式预处理
+如果输入是 HTML/PDF/Excel，先用「输入文件格式预处理」章节的方法提取纯文本。
+
+### Step 1：查重
+```bash
+find ~/.hermes/skills/strategy-material-engine -path "*/sources/*" -name "*关键词*" 2>/dev/null
+find ~/.hermes/skills/strategy-material-engine -path "*/materials/*" -name "*关键词*" 2>/dev/null
+```
+如果 source 和对应 materials 都已存在，跳过入库。部分存在时只补缺的。
+
+### Step 2：写 source
+写完整原文到 `sources/buildmate/` 或 `sources/materials/`，frontmatter 按 schema 填写（title/author/origin/date/tags/link/summary）。保留原文不做删改。
+
+### Step 3：提取素材
+按内容类型决定提取什么：
+
+**观点文/方法论文**（如 V先生轻创业锦囊）：不建 case，直接提取 materials。常见类型分布：
+- `method`：框架、流程、SOP、清单（最常见，干货密度高的文章通常 1-3 条）
+- `insight`：反常识洞察、认知翻转、本质归纳
+- `quote`：金句（有传播力的一句话）
+- `data`：具体数字、对比数据、产出规划
+- `playbook`：可执行打法（比 method 更具体，带条件判断）
+
+**精华帖/实操复盘**：source + case draft + 必要时派生 materials。
+
+**命名规范**：用中文概括核心主张，如 `垂直领域四种写作模板-维基百科法知乎法豆瓣法芒格法.md`。避免和已有文件重名。
+
+**提取密度参考**：一篇 3000-5000 字干货文通常提取 4-8 条素材。不要贪多，只提取真正有复用价值的原子单元。
+
+### Step 4：标记脏桶 + 刷新索引
+```bash
+cd scripts && python3 -c "
+from _index_state import mark_dirty; from pathlib import Path
+root = Path('..').resolve()
+mark_dirty(root, 'sources', reason='...')
+mark_dirty(root, 'materials', reason='...')
+" && python3 flush_indexes.py --root .. --all
+```
+
+### Step 5：搜索验证
+```bash
+cd scripts && python3 search_knowledge.py "关键词" --mode writing --root .. --disable-query-rewrite
+```
+确认新素材能被检索命中，score > 0.8 为佳。
 
 ## 搜索路径
 

@@ -40,6 +40,7 @@ index/
 evals/query_planner/planner_cache.json
 evals/query_planner/planner_events.jsonl
 evals/reports/
+.runtime/
 
 # Node (if any frontend ever added)
 node_modules/
