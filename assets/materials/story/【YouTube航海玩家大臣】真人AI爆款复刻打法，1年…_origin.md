@@ -1,0 +1,53 @@
+---
+type: story
+story_arc: origin
+primary_claim: 大臣，去年 3 月参加 YouTube 航海后入局的 AI 视频创作者。
+claims:
+- 大臣，去年 3 月参加 YouTube 航海后入局的 AI 视频创作者。
+- 通过「爆款IP × 爆款脚本」的方法在 YouTube 做真人 AI 视频，先验证流量，再用 Gemini + Seedance + 剪映复刻爆款短视频，目标是开
+  YPP 并赚美金。
+- 教新人掌握 YouTube 真人 AI 爆款复刻的基本功：找到有量 IP、找到可复爆脚本、做出一条能过平台和用户双重检验的真人 AI 短视频。
+- 1) 花了多少钱？ 原文未披露总投入；免费工具包括 `Viewstats`、`Gemini AI Studio`、`Gemini 图片生成`、`剪映`、`QQ音乐听歌识曲`，主要付费项是
+  `Seedance` 生成额度。 2) 投入了多少时间？ 从去年 3 月入局到分享时约 1 年；日常动作包括刷 B 站梗百科、刷 YouTube 无痕首页、持续跟踪全球电影和游戏资讯。
+  3) 有没有合伙人？ 原文未提团队协作，按表述更像作者单人推进。 4) 用到了什么特殊技能或设备？ 需要持续找 IP、筛脚本、读懂镜头语言、用 Gemini 拆分镜、用
+  Seedance 生视频、用剪映做节奏和音效。 5) 其他启动条件： 需要一个干净的小号去喂 YouTube 推荐，需要基础英文理解能力去搜海外视频，需要能长期刷平台建立内容直觉。
+ammo_type: dual
+role: opening
+strength: firsthand
+content_sha256: 71746745def82e2ba99750662e06e201e1e2d3a4d22c369be99bc825fde5d01e
+tags:
+- YPP
+- 变现
+- 爆款复刻
+- AI视频
+- 真人脚本
+- IP验证
+- 脚本挖掘
+- 分镜拆解
+- 参考图生成
+- Seedance生成
+- 节奏剪辑
+channel_fit:
+- general
+source: 【YouTube航海玩家大臣】真人AI爆款复刻打法，1年做出8个高YPP、月入4500刀
+source_refs:
+- assets/cases/imported/youtube_seedance2_gene_library_raw.md
+- sources/buildmate/youtube_seedance2真人爆款视频.md
+derived_from_case: case_youtube_seedance2真人爆款视频
+date: '2026-04-21'
+quality_score: 3.0
+use_count: 0
+last_used_at: null
+used_in_articles: []
+impact_log: []
+source_reliability: 4.0
+review_status: draft
+title: 【YouTube航海玩家大臣】真人AI爆款复刻打法，1年…_origin
+---
+
+故事起点里，大臣，去年 3 月参加 YouTube 航海后入局的 AI 视频创作者。，大臣，去年 3 月参加 YouTube 航海后入局的 AI 视频创作者。
+通过“爆款IP × 爆款脚本”的方法在 YouTube 做真人 AI 视频，先验证流量，再用 Gemini + Seedance + 剪映复刻爆款短视频，目标是开 YPP 并赚美金。
+教新人掌握 YouTube 真人 AI 爆款复刻的基本功：找到有量 IP、找到可复爆脚本、做出一条能过平台和用户双重检验的真人 AI 短视频。
+
+故事证据：
+- 通过“爆款IP × 爆款脚本”的方法在 YouTube 做真人 AI 视频，先验证流量，再用 Gemini + Seedance + 剪映复刻爆款短视频，目标是开 YPP 并赚美金。 大臣，去年 3 月参加 YouTube 航海后入局的 AI 视频创作者。 1) 花了多少钱？ 原文未披露总投入；免费工具包括 `Viewstats`、`Gemini AI Studio`、`Gemini 图片生成`、`剪映`、`QQ音乐听歌识曲`，主要付费项是 `Seedance` 生成额度。 2) 投入了多少时间？ 从去年 3 月入局到分享时约 1 年；日常动作包括刷 B 站梗百科、刷 YouTube 无痕首页、持续跟踪全球电影和游戏资讯。 3) 有没有合伙人？ 原文未提团队协作，按表述更像作者单人推进。 4) 用到了什么特殊技能或设备？ 需要持续找 IP、筛脚本、读懂镜头语言、用 Gemini 拆分镜、用 Seedance 生视频、用剪映做节奏和音效。 5) 其他启动条件： 需要一个干净的小号去喂 YouTube 推荐，需要基础英文理解能力去搜海外视频，需要能长期刷平台建立内容直觉。 教新人掌握 YouTube 真人 AI 爆款复刻的基本功：找到有量 IP、找到可复爆脚本、做出一条能过平台和用户双重检验的真人 AI 短视频。 - 坑点：看到一个热门形象或故事就直接开做，没有先验证当前流量，也没有先筛掉文化差异大或高风险的脚本，结果很容易零播放、白花时间和生成成本。 - 解决方案：把“IP 当月流量验证 + 脚本四条红线筛查”做成前置闸门，只有同时过关的 IP 和脚本才能进入分镜、生成和剪辑环节。 入局约 1 年，做出 8 个高级 YPP 账号，单月盈利约 4500 刀，期间还跑出 1 条亿播爆款和 1 篇龙珠精华贴。 ---

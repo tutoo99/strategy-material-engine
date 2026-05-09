@@ -2,28 +2,36 @@
 type: story
 primary_claim: 用1000块试投流打开付费流量飞轮，从自然流涨粉几千到投流涨粉两三万
 claims:
-  - 投流的亏损上限确定（1000块），但收益可能是亏损的几十倍
-  - 投流→粉丝涨→商单价格涨→赚更多钱→有更多预算投流，正循环
-  - 试错的前提是能承受亏损，用亏了也无所谓的钱买可能性
-tags: [投流, 付费流量, 自媒体, AI, 试错, 飞轮效应]
+- 投流的亏损上限确定(1000块)，但收益可能是亏损的几十倍
+- 投流→粉丝涨→商单价格涨→赚更多钱→有更多预算投流，正循环
+- 试错的前提是能承受亏损，用亏了也无所谓的钱买可能性
+tags:
+- 投流
+- 付费流量
+- 自媒体
+- AI
+- 试错
+- 飞轮效应
 ammo_type: substance
 role: case_example
 strength: observation
-channel_fit: [general]
+channel_fit:
+- general
 source: 一个能帮你更好做决策的思维方式：期望值决策
 source_refs:
-  - sources/materials/一个能帮你更好做决策的思维方式：期望值决策.md
-derived_from_case:
-source_uid:
-content_sha256:
+- sources/materials/一个能帮你更好做决策的思维方式：期望值决策.md
+derived_from_case: null
+source_uid: null
+content_sha256: null
 date: 2025-04-01
 quality_score: 4.0
 use_count: 0
-last_used_at:
+last_used_at: null
 used_in_articles: []
 impact_log: []
 source_reliability: 4.0
 review_status: approved
+title: AI自媒体投流飞轮案例
 ---
 
 联合办公有个圈友，做AI自媒体的，B站、小红书、视频号都在做，全网几万粉丝，每个月有小几万块稳定收入。听了期望值决策之后，拿了一两千块预算直接开投——之前完全没投过，连聚光账户都没有。
