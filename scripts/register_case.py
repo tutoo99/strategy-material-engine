@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 from _index_state import mark_dirty
+from _io_safety import file_lock
 from _buildmate_lib import (
     assert_project_root,
     derive_case_id,
@@ -144,15 +145,16 @@ def register_case(
     if merged_meta["body_lock"] is None:
         merged_meta["body_lock"] = True
 
-    duplicate_path = find_existing_case_duplicate(root, resolved_output_path, merged_meta)
-    if duplicate_path and not overwrite and not force_register_duplicate:
-        raise SystemExit(
-            f"Potential duplicate case already exists: {duplicate_path}. "
-            "Pass --overwrite for the same output path or --force-register-duplicate to keep both."
-        )
+    with file_lock(root, "ingest"):
+        duplicate_path = find_existing_case_duplicate(root, resolved_output_path, merged_meta)
+        if duplicate_path and not overwrite and not force_register_duplicate:
+            raise SystemExit(
+                f"Potential duplicate case already exists: {duplicate_path}. "
+                "Pass --overwrite for the same output path or --force-register-duplicate to keep both."
+            )
 
-    write_markdown(resolved_output_path, merged_meta, body)
-    mark_dirty(root, "cases", reason="register_case")
+        write_markdown(resolved_output_path, merged_meta, body)
+        mark_dirty(root, "cases", reason="register_case")
     return resolved_output_path
 
 

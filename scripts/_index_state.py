@@ -6,6 +6,8 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from _io_safety import atomic_write_json, file_lock
+
 STATE_DIR = Path("index/_state")
 DIRTY_STATE_PATH = STATE_DIR / "dirty.json"
 KNOWN_BUCKETS = ("sources", "materials", "cases", "entities", "unified")
@@ -49,48 +51,47 @@ def load_dirty_state(root: Path) -> dict:
 
 def write_dirty_state(root: Path, payload: dict) -> None:
     ensure_state_dir(root)
-    dirty_state_path(root).write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
+    atomic_write_json(dirty_state_path(root), payload)
 
 
 def mark_dirty(root: Path, *buckets: str, reason: str = "") -> dict:
-    payload = load_dirty_state(root)
-    registry = payload["buckets"]
-    changed_at = now_iso()
-    for bucket in buckets:
-        cleaned = str(bucket or "").strip()
-        if not cleaned:
-            continue
-        entry = registry.get(cleaned)
-        if not isinstance(entry, dict):
-            entry = {}
-        entry["dirty"] = True
-        entry["updated_at"] = changed_at
-        if reason:
-            entry["reason"] = reason
-        registry[cleaned] = entry
-    write_dirty_state(root, payload)
-    return payload
+    with file_lock(root, "dirty_state"):
+        payload = load_dirty_state(root)
+        registry = payload["buckets"]
+        changed_at = now_iso()
+        for bucket in buckets:
+            cleaned = str(bucket or "").strip()
+            if not cleaned:
+                continue
+            entry = registry.get(cleaned)
+            if not isinstance(entry, dict):
+                entry = {}
+            entry["dirty"] = True
+            entry["updated_at"] = changed_at
+            if reason:
+                entry["reason"] = reason
+            registry[cleaned] = entry
+        write_dirty_state(root, payload)
+        return payload
 
 
 def clear_dirty(root: Path, *buckets: str) -> dict:
-    payload = load_dirty_state(root)
-    registry = payload["buckets"]
-    cleared_at = now_iso()
-    for bucket in buckets:
-        cleaned = str(bucket or "").strip()
-        if not cleaned:
-            continue
-        entry = registry.get(cleaned)
-        if not isinstance(entry, dict):
-            entry = {}
-        entry["dirty"] = False
-        entry["cleared_at"] = cleared_at
-        registry[cleaned] = entry
-    write_dirty_state(root, payload)
-    return payload
+    with file_lock(root, "dirty_state"):
+        payload = load_dirty_state(root)
+        registry = payload["buckets"]
+        cleared_at = now_iso()
+        for bucket in buckets:
+            cleaned = str(bucket or "").strip()
+            if not cleaned:
+                continue
+            entry = registry.get(cleaned)
+            if not isinstance(entry, dict):
+                entry = {}
+            entry["dirty"] = False
+            entry["cleared_at"] = cleared_at
+            registry[cleaned] = entry
+        write_dirty_state(root, payload)
+        return payload
 
 
 def dirty_buckets(root: Path) -> list[str]:

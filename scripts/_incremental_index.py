@@ -14,6 +14,7 @@ from typing import Callable
 
 import numpy as np
 
+from _io_safety import atomic_write_json
 from _material_lib import encode_texts, write_jsonl
 
 EMBED_DIMENSION = 1024
@@ -66,10 +67,7 @@ def load_manifest(root: Path, bucket: str) -> dict:
 def write_manifest(root: Path, bucket: str, payload: dict) -> None:
     path = manifest_path(root, bucket)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
+    atomic_write_json(path, payload)
 
 
 def rows_cache_path(root: Path, bucket: str, cache_key: str) -> Path:
@@ -102,11 +100,26 @@ def load_cached_doc(root: Path, bucket: str, cache_key: str) -> tuple[list[dict]
 def save_cached_doc(root: Path, bucket: str, cache_key: str, rows: list[dict], vectors: np.ndarray) -> None:
     target_dir = cache_dir(root, bucket)
     target_dir.mkdir(parents=True, exist_ok=True)
-    rows_cache_path(root, bucket, cache_key).write_text(
-        json.dumps(rows, ensure_ascii=False, indent=2, default=str),
-        encoding="utf-8",
-    )
-    np.save(vectors_cache_path(root, bucket, cache_key), np.asarray(vectors, dtype="float32"), allow_pickle=False)
+    atomic_write_json(rows_cache_path(root, bucket, cache_key), rows)
+    vectors_path = vectors_cache_path(root, bucket, cache_key)
+    with tempfile.NamedTemporaryFile(
+        dir=str(vectors_path.parent),
+        prefix=f".{vectors_path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as handle:
+        temp_vectors_path = Path(handle.name)
+    try:
+        np.save(temp_vectors_path, np.asarray(vectors, dtype="float32"), allow_pickle=False)
+        npy_path = temp_vectors_path.with_name(temp_vectors_path.name + ".npy")
+        if npy_path.exists():
+            temp_vectors_path.unlink(missing_ok=True)
+            os.replace(npy_path, vectors_path)
+        else:
+            os.replace(temp_vectors_path, vectors_path)
+    finally:
+        temp_vectors_path.unlink(missing_ok=True)
+        temp_vectors_path.with_name(temp_vectors_path.name + ".npy").unlink(missing_ok=True)
 
 
 def empty_vectors() -> np.ndarray:

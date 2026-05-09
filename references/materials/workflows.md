@@ -1,89 +1,115 @@
-# Workflows
+# 工作流
 
-## Ingestion workflow
+## 入库流程
 
-Use this flow when turning raw input into searchable sources and reusable materials:
+把原始内容变成可检索来源和可复用素材时，按这条链路走：
 
-1. Decide whether the input is raw source material or an already-formed reusable unit
-2. Save raw source material into `sources/`
-3. Run `/opt/miniconda3/bin/python3 scripts/build_sources_index.py --root . --device cpu --batch-size 2`
-4. Search source chunks with `scripts/search_sources.py`
-5. Promote the best chunk into a draft material with `scripts/extract_material.py`
-6. Rewrite and finish the draft under `assets/materials/<type>/`
-7. Run `/opt/miniconda3/bin/python3 scripts/build_materials_index.py --root . --device cpu --batch-size 2`
+1. 先判断输入是原始来源，还是已经成型的可复用单元
+2. 原始内容先存入 `sources/`
+3. 如果来源文件是课程、实录或多主题长文，先跑 `/opt/miniconda3/bin/python3 scripts/plan_source_materials.py sources/materials/xxx.md --root .`
+4. 根据规划结果，先按主题域拆，再进入素材草稿阶段
+5. 运行 `/opt/miniconda3/bin/python3 scripts/build_sources_index.py --root . --device cpu --batch-size 2`
+6. 搜索来源分块，确认是否需要补证据或补拆分
+7. 用 `scripts/extract_material.py` 或 `scripts/new_material.py` 生成素材草稿
+8. 在 `assets/materials/<type>/` 下补完内容
+9. 运行 `/opt/miniconda3/bin/python3 scripts/build_materials_index.py --root . --device cpu --batch-size 2`
 
 ## 素材提取标准
 
 ### 入库原则：宽进严出
 
-提取时不要纠结"这条素材好不好"，只问一个问题：**它有没有可能在未来某个场景的某篇文章里被直接用到？** 有，就入库。砍掉的只应该是明确无用的噪音（过时信息、错误事实、与所有内容方向都不相关的）。
+提取时不要纠结“这条素材够不够强”，只问一个问题：**它未来有没有可能被某篇文章直接调用？** 有，就入库。真正该砍掉的是明确无用的噪音：过时信息、错误事实、与内容方向无关的段落。
+
+### 先判断内容形态
+
+- **单主题文章**：通常只有 1-2 个中心观点，沿主论点往下拆
+- **多主题长文 / 长访谈**：先列主题域，再按域拆
+- **系统课程 / 教学实录 / 转录稿**：默认不是“一篇长文章”，而是“单源多主题知识体系”
+
+对系统课程，首要问题不是“总共提几条”，而是“它覆盖了几个独立主题域，每个域该拆出几条可复用素材”。
 
 ### 提取时必做四件事
 
-1. **改写，不搬运** — 用自己的话重新表述，不要复制粘贴原文
-2. **脱敏隐私信息** — 入库时必须去掉或替换以下内容：
-   - 具体人名 → 换成角色描述（"一位做知识付费的创业者"）
-   - 具体公司/组织名 → 换成泛化描述（"一个社群产品""某大厂"）
-   - 人名+公司/金额/职位的组合 → 去掉身份关联，保留数字和场景
-   - 论证链、比喻、金句、方法论步骤 → **保留**，这些是素材核心价值
-   - 脱敏只处理隐私，不处理内容质量
-3. **标 ammo_type** — 凭直觉选 hook / substance / dual，不纠结：
-   - 读完想转发 → hook
-   - 读完学到东西 → substance
-   - 两者都有 → dual
-4. **标 channel_fit** — 想想这条素材最适合你的哪个号/赛道，标到最细粒度
+1. **改写，不搬运**：用自己的话重新表述，不要整段复制原文
+2. **脱敏隐私信息**：人名、公司名、身份组合信息要泛化；方法链、比喻、论证、金句要保留
+3. **标 `ammo_type`**：直觉判断是 `hook`、`substance` 还是 `dual`
+4. **标 `channel_fit`**：按最适合的账号或赛道标注，别只写大类
+
+### 单源多主题拆分规则
+
+1. 先列出来源文件的主题域清单，通常 `3-10` 项
+2. 每个主题域至少检查一次：能否独立成条
+3. 同一主题域里，如果同时存在 `method / insight / data / quote` 等不同复用单元，应优先拆开
+4. 默认反对“总括型大全素材”；除非原文价值本身就是一个总框架
+5. 如果两个部分未来会用不同关键词被检索到，就不要合并
+
+示例：
+- 镜头语言
+- 场面调度
+- 声音设计
+- 行业数据
+- 学习路径
+
+这 5 个域默认至少应是 5 次独立判断，而不是“提 1 条课程总结”。
+
+### 提取密度规则
+
+- 3000-5000 字单主题干货文：通常 `4-8` 条
+- 15000 字以上单主题长文：通常 `6-12` 条
+- **系统课程 / 教学实录 / 多主题转录稿：不设硬上限**
+- 经验上，每个独立主题域常见会产出 `1-3` 条专精素材
+
+“不要贪多”只用于防止重复和弱素材，不用于限制系统课程的正常拆分密度。
 
 ### 提取时不要做的事
 
-- 不要评估传播力或信任度（这是市场反馈，不是你能预判的）
-- 不要用变现能力做筛选标准（素材的直接服务对象是文章，不是变现）
+- 不要评估传播力或信任度，这不是入库阶段该做的判断
+- 不要用变现能力做筛选标准，素材的直接服务对象是文章
 - 不要重复提取同一观点的不同表述
-- 不要把原始来源直接当作成品素材存入
-- 不要在素材正文里保留具体人名、公司名、或其他可直接识别来源身份的信息
+- 不要把原始来源文本直接当作成品素材存入
+- 不要在素材正文里保留可直接识别身份的敏感信息
 
-## Writing workflow
+## 写作调用流程
 
-Use this flow when drafting an article or other content asset:
+写文章或做内容资产时，按这条链路调用素材：
 
-1. Break the piece into section intents or claims
-2. Search `assets/materials/` for each claim
-3. Prefer precise materials with clear claim match and role fit
-4. If recall is weak, search `sources/` as fallback
-5. Turn useful fallback chunks into new materials after writing
+1. 先把文章拆成几个段落意图或核心主张
+2. 针对每个主张搜索 `assets/materials/`
+3. 优先选主张明确、角色清晰、可直接嵌入的素材
+4. 如果召回弱，再回到 `sources/` 搜原文证据
+5. 写完后，把高价值的原文分块反向沉淀成新素材
 
-## Feedback workflow（发布后回写）
+## 发布后回写
 
-文章发布后，回填素材的使用效果：
+文章发布后，要把使用效果回写到素材库里：
 
-1. 在素材的 `used_in_articles` 里加上文章标识
-2. 在 `impact_log` 里加一条记录：
-   - `impact: traffic` — 贡献了流量（被评论、被转发、被引用）
-   - `impact: trust` — 贡献了信任（读者说学到东西、专业认可）
-   - `impact: both` — 两者兼具
-   - `impact: none` — 没有明显效果
-3. `quality_score` 根据积累的 impact_log 自然调整：
-   - 出现多次 traffic 或 both → 上调
-   - 出现多次 none → 下调
-4. 这个反馈回路跑起来后，素材库会自然形成"哪些弹药好用、哪些粮仓硬"的数据
+1. 在素材的 `used_in_articles` 里补文章标识
+2. 在 `impact_log` 里记一次使用结果
+3. 根据积累的效果，逐步调整 `quality_score`
+4. 长期跑下来，素材库会自然形成“哪些弹药更好用”的反馈闭环
 
-## Index build: offline mode required in sandboxed envs
+## 索引构建说明
 
-The embedding model (BAAI/bge-large-zh-v1.5) IS cached locally in the sandbox, but `transformers` still tries to contact HuggingFace for metadata validation by default — which times out in sandboxed/network-restricted environments.
+沙箱环境里，embedding 模型虽然已经缓存本地，但 `transformers` 仍可能尝试联网校验元数据，导致超时。
 
-**Fix already applied:** `scripts/_material_lib.py` sets `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1` at import time.
+已处理方式：
 
-If index builds still fail with network timeouts, manually prefix the command:
+- `scripts/_material_lib.py` 在导入时设置了 `HF_HUB_OFFLINE=1`
+- 同时设置了 `TRANSFORMERS_OFFLINE=1`
+
+如果索引构建仍报网络超时，可以手动这样执行：
+
 ```bash
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 /opt/miniconda3/bin/python3 scripts/build_materials_index.py --root . --device cpu --batch-size 2
 ```
 
-**Do NOT remove these env vars.** The model cache exists; the issue is purely an unwanted network probe.
+不要删除这两个环境变量。问题不是模型不存在，而是运行时多余的联网探测。
 
-## Quality gate
+## 质量闸门
 
-Keep these rules active:
+始终保持这几条约束：
 
-- Do not accept weak materials that still require inventing missing details
-- Do not treat raw source text as finished material
-- Do not skip material search during drafting
-- Do not add `emotion` retrieval to the core loop until the main retrieval path is stable
+- 不接受还需要大量脑补的弱素材
+- 不把原始来源文本误当成完成态素材
+- 写作时不要跳过素材检索
+- 在主检索链路稳定前，不要把 `emotion` 检索并入核心回路

@@ -31,7 +31,7 @@ REQUIRED_META_FIELDS = [
 
 ALLOWED_VERIFICATION_STATUS = {"verified", "weakly_verified", "unverified"}
 ALLOWED_TRUST_LEVEL = {"production", "observation", "excluded"}
-RECOMMENDED_CASE_SECTIONS = ["归因与边界", "作战序列", "资源清单"]
+RECOMMENDED_CASE_SECTIONS = ["故事线", "归因与边界", "作战序列", "资源清单"]
 
 RESULT_HINTS = ["赚", "变现", "增长", "成交", "粉丝", "阅读", "复购", "用户", "月入", "起盘"]
 AUTO_REPAIRABLE_PATTERNS = [

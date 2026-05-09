@@ -28,6 +28,7 @@ def build_material_doc(path: Path, root: Path) -> tuple[list[dict], list[str]]:
         "asset_type": "material",
         "subtype": meta.get("type", ""),
         "type": meta.get("type", ""),
+        "story_arc": meta.get("story_arc", ""),
         "primary_claim": meta.get("primary_claim", ""),
         "claims": claims,
         "tags": tags,
@@ -53,6 +54,7 @@ def build_material_doc(path: Path, root: Path) -> tuple[list[dict], list[str]]:
     embed_text = "\n".join(
         [
             f"type: {payload['type']}",
+            f"story_arc: {payload['story_arc']}",
             f"primary_claim: {payload['primary_claim']}",
             f"claims: {' | '.join(payload['claims'])}",
             f"tags: {' '.join(payload['tags'])}",

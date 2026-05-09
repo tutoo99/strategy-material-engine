@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from dataclasses import dataclass
 from datetime import date
@@ -12,6 +11,9 @@ from typing import Any, Iterable
 from urllib.parse import urlparse
 
 import yaml
+
+from _llm_client import call_deepseek_json, validate_deepseek_backend
+from _io_safety import atomic_write_jsonl, atomic_write_text
 
 
 REQUIRED_CASE_SECTIONS = [
@@ -25,6 +27,54 @@ REQUIRED_CASE_SECTIONS = [
     "最大一个坑",
     "最值钱忠告",
     "待验证推测",
+]
+
+STORY_START_KEYWORDS = [
+    "我是",
+    "当时",
+    "一开始",
+    "最开始",
+    "刚开始",
+    "背景",
+    "毕业",
+    "失业",
+    "辞职",
+    "副业",
+    "没有",
+    "第一次",
+]
+
+STORY_TURN_KEYWORDS = [
+    "后来",
+    "但是",
+    "但",
+    "结果",
+    "直到",
+    "没想到",
+    "于是",
+    "卡住",
+    "失败",
+    "踩坑",
+    "封号",
+    "改成",
+    "改为",
+    "转向",
+]
+
+STORY_PAYOFF_KEYWORDS = [
+    "最终",
+    "最后",
+    "后来",
+    "赚",
+    "收入",
+    "变现",
+    "增长",
+    "盈利",
+    "月入",
+    "播放",
+    "成交",
+    "开通",
+    "做到",
 ]
 
 ACTION_VERBS = [
@@ -186,7 +236,7 @@ def read_markdown(path: Path) -> tuple[dict, str]:
 def write_markdown(path: Path, meta: dict, body: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     content = f"---\n{dump_frontmatter(meta)}\n---\n\n{body.strip()}\n"
-    path.write_text(content, encoding="utf-8")
+    atomic_write_text(path, content, encoding="utf-8")
 
 
 def list_markdown_files(root: Path) -> list[Path]:
@@ -212,14 +262,37 @@ def normalize_whitespace(text: str) -> str:
     return re.sub(r"\s+", " ", str(text)).strip()
 
 
+def clean_markup(text: str) -> str:
+    cleaned = str(text or "")
+    cleaned = re.sub(r"<[^>]+>", " ", cleaned)
+    cleaned = re.sub(r"!\[[^\]]*\]\([^)]+\)", " ", cleaned)
+    cleaned = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1", cleaned)
+    cleaned = cleaned.replace("**", " ")
+    cleaned = cleaned.replace("__", " ")
+    cleaned = cleaned.replace("```", " ")
+    return normalize_whitespace(cleaned)
+
+
 def split_sentences(text: str) -> list[str]:
-    raw_parts = re.split(r"[。\n！？!?；;]+", text)
+    raw_parts = re.split(r"[。\n！？!?；;]+", clean_markup(text))
     results = []
     for part in raw_parts:
         normalized = normalize_whitespace(part)
         if len(normalized) >= 4:
             results.append(normalized)
     return results
+
+
+def split_blocks(text: str) -> list[str]:
+    blocks: list[str] = []
+    seen: set[str] = set()
+    for raw_block in re.split(r"\n\s*\n", str(text or "")):
+        cleaned = clean_markup(raw_block)
+        if len(cleaned) < 8 or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        blocks.append(cleaned)
+    return blocks
 
 
 def pick_first(sentences: Iterable[str], keywords: list[str]) -> str | None:
@@ -237,6 +310,194 @@ def pick_many(sentences: Iterable[str], keywords: list[str], limit: int = 3) -> 
         if len(hits) >= limit:
             break
     return hits
+
+
+def has_story_shape(text: str) -> bool:
+    cleaned = clean_markup(text)
+    if len(cleaned) < 16:
+        return False
+    score = 0
+    if any(token in cleaned for token in ["我", "他", "她", "作者", "一位", "某", "这个人"]):
+        score += 1
+    if any(token in cleaned for token in STORY_START_KEYWORDS + STORY_TURN_KEYWORDS + STORY_PAYOFF_KEYWORDS):
+        score += 1
+    if any(token in cleaned for token in ACTION_VERBS):
+        score += 1
+    if any(char.isdigit() for char in cleaned):
+        score += 1
+    return score >= 2
+
+
+def _score_story_text(
+    text: str,
+    *,
+    keywords: list[str],
+    prefer_numbers: bool = False,
+    prefer_actions: bool = False,
+) -> int:
+    cleaned = clean_markup(text)
+    if not cleaned:
+        return -10
+    score = 0
+    score += sum(3 for keyword in keywords if keyword and keyword in cleaned)
+    if any(token in cleaned for token in ["我", "他", "她", "作者", "一位", "某"]):
+        score += 2
+    if any(token in cleaned for token in ACTION_VERBS):
+        score += 2 if prefer_actions else 1
+    if any(char.isdigit() for char in cleaned):
+        score += 2 if prefer_numbers else 1
+    if len(cleaned) < 12:
+        score -= 4
+    elif 18 <= len(cleaned) <= 140:
+        score += 2
+    elif len(cleaned) > 220:
+        score -= 2
+    if not has_story_shape(cleaned):
+        score -= 1
+    return score
+
+
+def pick_story_candidate(
+    values: Iterable[str],
+    *,
+    keywords: list[str],
+    prefer_numbers: bool = False,
+    prefer_actions: bool = False,
+    fallback: str = "",
+) -> str:
+    ranked: list[tuple[int, str]] = []
+    seen: set[str] = set()
+    for value in values:
+        cleaned = clean_markup(value)
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        ranked.append(
+            (
+                _score_story_text(
+                    cleaned,
+                    keywords=keywords,
+                    prefer_numbers=prefer_numbers,
+                    prefer_actions=prefer_actions,
+                ),
+                cleaned,
+            )
+        )
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    if ranked and ranked[0][0] > 0:
+        return ranked[0][1]
+    return clean_markup(fallback)
+
+
+def pick_story_evidence_blocks(text: str, limit: int = 3) -> list[str]:
+    ranked: list[tuple[int, str]] = []
+    for block in split_blocks(text):
+        score = _score_story_text(
+            block,
+            keywords=STORY_START_KEYWORDS + STORY_TURN_KEYWORDS + STORY_PAYOFF_KEYWORDS,
+            prefer_numbers=True,
+            prefer_actions=True,
+        )
+        if score <= 0:
+            continue
+        ranked.append((score, block))
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    evidence: list[str] = []
+    seen: set[str] = set()
+    for _score, block in ranked:
+        if block in seen:
+            continue
+        seen.add(block)
+        evidence.append(block)
+        if len(evidence) >= limit:
+            break
+    return evidence
+
+
+def derive_story_outline(
+    *,
+    body: str,
+    title: str = "",
+    author_identity: str = "",
+    one_line_business: str = "",
+    core_goal: str = "",
+    final_result: str = "",
+    pitfall_text: str = "",
+    decisions: list[Decision] | None = None,
+    existing_sections: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    sections = existing_sections or {}
+    decision_texts: list[str] = []
+    for decision in decisions or []:
+        if decision.choice:
+            decision_texts.append(decision.choice)
+        if decision.basis:
+            decision_texts.append(decision.basis)
+        if decision.evidence:
+            decision_texts.append(decision.evidence)
+        decision_texts.extend(decision.action_steps[:2])
+
+    source_sentences = split_sentences(body)
+    evidence_blocks = pick_story_evidence_blocks(body, limit=3)
+
+    start_candidates = [
+        sections.get("起点处境", ""),
+        sections.get("作者是谁", ""),
+        sections.get("启动资源", ""),
+        sections.get("一句话业务", ""),
+        author_identity,
+        one_line_business,
+    ]
+    start_candidates.extend(source_sentences[:10])
+    start_candidates.extend(evidence_blocks[:2])
+
+    turn_candidates = [
+        sections.get("关键转折", ""),
+        sections.get("最大一个坑", ""),
+        pitfall_text,
+    ]
+    turn_candidates.extend(decision_texts[:8])
+    turn_candidates.extend(source_sentences)
+    turn_candidates.extend(evidence_blocks)
+
+    payoff_candidates = [
+        sections.get("结果兑现", ""),
+        sections.get("最终结果", ""),
+        final_result,
+        core_goal,
+    ]
+    payoff_candidates.extend(decision_texts[:4])
+    payoff_candidates.extend(source_sentences)
+    payoff_candidates.extend(evidence_blocks)
+
+    start = pick_story_candidate(
+        start_candidates,
+        keywords=STORY_START_KEYWORDS,
+        prefer_actions=False,
+        fallback=author_identity or one_line_business or title,
+    )
+    turn = pick_story_candidate(
+        turn_candidates,
+        keywords=STORY_TURN_KEYWORDS + PITFALL_KEYWORDS + DECISION_KEYWORDS,
+        prefer_actions=True,
+        fallback=pitfall_text,
+    )
+    payoff = pick_story_candidate(
+        payoff_candidates,
+        keywords=STORY_PAYOFF_KEYWORDS + RESULT_KEYWORDS,
+        prefer_numbers=True,
+        fallback=final_result or core_goal,
+    )
+
+    if not evidence_blocks:
+        evidence_blocks = [item for item in [start, turn, payoff] if item]
+
+    return {
+        "start": start,
+        "turn": turn,
+        "payoff": payoff,
+        "evidence_blocks": evidence_blocks[:3],
+    }
 
 
 def pick_best_goal(sentences: list[str]) -> str | None:
@@ -317,72 +578,6 @@ def _compact_text(text: str) -> str:
     return normalize_whitespace(str(text or ""))
 
 
-def _extract_json_from_text(text: str) -> dict[str, Any]:
-    raw = str(text or "").strip()
-    if not raw:
-        raise ValueError("LLM response is empty")
-    try:
-        parsed = json.loads(raw)
-        if isinstance(parsed, dict):
-            return parsed
-    except json.JSONDecodeError:
-        pass
-    match = re.search(r"\{.*\}", raw, flags=re.S)
-    if not match:
-        raise ValueError(f"Unable to parse JSON from LLM response: {raw[:200]}")
-    parsed = json.loads(match.group(0))
-    if not isinstance(parsed, dict):
-        raise ValueError("LLM response is not a JSON object")
-    return parsed
-
-
-def _resolve_buildmate_llm_config(
-    *,
-    backend: str = "auto",
-    model: str = "",
-    base_url: str = "",
-    api_key: str = "",
-) -> dict[str, str]:
-    requested_backend = str(backend or "auto").strip().lower()
-    explicit_key = str(api_key or "").strip()
-    explicit_url = str(base_url or "").strip()
-    explicit_model = str(model or "").strip()
-
-    glm_key = explicit_key or os.getenv("BUILDMATE_LLM_API_KEY", "").strip() or os.getenv("GLM_API_KEY", "").strip()
-    ark_key = explicit_key or os.getenv("BUILDMATE_LLM_API_KEY", "").strip() or os.getenv("ARK_API_KEY", "").strip()
-    mimo_key = explicit_key or os.getenv("BUILDMATE_LLM_API_KEY", "").strip() or os.getenv("MIMO_API_KEY", "").strip()
-
-    # auto 模式优先级：mimo > glm > ark
-    if requested_backend in {"mimo", "auto"} and mimo_key:
-        return {
-            "backend": "mimo",
-            "sdk": "anthropic",
-            "api_key": mimo_key,
-            "base_url": explicit_url or os.getenv("MIMO_BASE_URL", "https://token-plan-cn.xiaomimimo.com/anthropic"),
-            "model": explicit_model or os.getenv("MIMO_MODEL", "mimo-v2.5-pro"),
-        }
-
-    if requested_backend in {"glm", "auto"} and glm_key:
-        return {
-            "backend": "glm",
-            "sdk": "openai",
-            "api_key": glm_key,
-            "base_url": explicit_url or os.getenv("BUILDMATE_LLM_BASE_URL", "").strip() or os.getenv("GLM_BASE_URL", "https://open.bigmodel.cn/api/paas/v4"),
-            "model": explicit_model or os.getenv("BUILDMATE_LLM_MODEL", "").strip() or os.getenv("GLM_TEXT_MODEL", "glm-4.7"),
-        }
-
-    if requested_backend in {"ark", "auto"} and ark_key:
-        return {
-            "backend": "ark",
-            "sdk": "openai",
-            "api_key": ark_key,
-            "base_url": explicit_url or os.getenv("BUILDMATE_LLM_BASE_URL", "").strip() or os.getenv("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
-            "model": explicit_model or os.getenv("BUILDMATE_LLM_MODEL", "").strip() or os.getenv("FENXIANGBIAO_TEXT_MODEL", "doubao-1-5-pro-32k-250115"),
-        }
-
-    raise RuntimeError("缺少可用的 LLM 凭证，请设置 BUILDMATE_LLM_API_KEY、GLM_API_KEY、ARK_API_KEY 或 MIMO_API_KEY。")
-
-
 def _build_extraction_prompt(title: str, author: str, summary: str, body: str) -> tuple[str, str]:
     """Build system and user prompts for case extraction."""
     system_prompt = (
@@ -400,6 +595,10 @@ def _build_extraction_prompt(title: str, author: str, summary: str, body: str) -
         '  "startup_resources": {"现金流": "", "时间": "", "技能": "", "团队/设备": "", "其他": ""},\n'
         '  "core_goal": "",\n'
         '  "final_result": "",\n'
+        '  "story_start": "",\n'
+        '  "story_turn": "",\n'
+        '  "story_payoff": "",\n'
+        '  "story_evidence": ["", ""],\n'
         '  "pitfall_sentence": "",\n'
         '  "pitfall_solution": "",\n'
         '  "advice": "",\n'
@@ -423,7 +622,8 @@ def _build_extraction_prompt(title: str, author: str, summary: str, body: str) -
         "4. 口语化表达要还原成结构化动作，例如\"前期不要烧钱\"→\"前期不投付费推广，先打满认证标+保持5A勋章\"。\n"
         "5. one_line_business 用一句话概括作者的核心业务或经验领域。\n"
         "6. core_goal 写作者想要达成的具体目标，不是文章主题。\n"
-        "7. advice 提取最有实操价值的一句忠告。\n\n"
+        "7. advice 提取最有实操价值的一句忠告。\n"
+        "8. story_start / story_turn / story_payoff 要优先保留人物、处境、动作、结果，不要写成抽象洞察。\n\n"
         f"帖子标题：{title}\n"
         f"作者：{author}\n"
         f"摘要：{summary}\n"
@@ -445,61 +645,17 @@ def llm_extract_case_payload(
     api_key: str = "",
     timeout: float = 120.0,
 ) -> dict[str, Any]:
-    llm_config = _resolve_buildmate_llm_config(backend=backend, model=model, base_url=base_url, api_key=api_key)
+    validate_deepseek_backend(backend)
     system_prompt, user_prompt = _build_extraction_prompt(title, author, summary, body)
-
-    if llm_config.get("sdk") == "anthropic":
-        return _call_anthropic(llm_config, system_prompt, user_prompt, timeout)
-    return _call_openai(llm_config, system_prompt, user_prompt, timeout)
-
-
-def _call_openai(llm_config: dict, system_prompt: str, user_prompt: str, timeout: float) -> dict[str, Any]:
-    from openai import OpenAI
-
-    client = OpenAI(
-        api_key=llm_config["api_key"],
-        base_url=llm_config["base_url"],
+    return call_deepseek_json(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
         timeout=timeout,
-        max_retries=1,
-    )
-    response = client.chat.completions.create(
-        model=llm_config["model"],
         temperature=0.1,
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
     )
-    content = response.choices[0].message.content or ""
-    return _extract_json_from_text(content)
-
-
-def _call_anthropic(llm_config: dict, system_prompt: str, user_prompt: str, timeout: float) -> dict[str, Any]:
-    import anthropic
-
-    client = anthropic.Anthropic(
-        api_key=llm_config["api_key"],
-        base_url=llm_config["base_url"],
-        timeout=timeout,
-        max_retries=1,
-    )
-    response = client.messages.create(
-        model=llm_config["model"],
-        max_tokens=4096,
-        temperature=0.1,
-        system=system_prompt,
-        messages=[
-            {"role": "user", "content": user_prompt},
-        ],
-    )
-    # Handle ThinkingBlock: find the first TextBlock in the response
-    content = ""
-    for block in response.content:
-        if hasattr(block, "text"):
-            content = block.text
-            break
-    return _extract_json_from_text(content)
 
 
 def decision_from_payload(item: dict[str, Any]) -> Decision | None:
@@ -768,6 +924,15 @@ def parse_core_section(text: str) -> tuple[list[str], dict[str, str], str]:
     return principles, pitfall, advice
 
 
+def parse_story_section(text: str) -> dict[str, str]:
+    return {
+        "起点处境": extract_level3_section(text, "起点处境"),
+        "关键转折": extract_level3_section(text, "关键转折"),
+        "结果兑现": extract_level3_section(text, "结果兑现"),
+        "故事证据": extract_level3_section(text, "故事证据"),
+    }
+
+
 def parse_case_body(body: str) -> dict:
     raw_sections = extract_sections_by_heading(body)
     sections = {clean_heading_title(title): content for title, content in raw_sections.items()}
@@ -791,6 +956,11 @@ def parse_case_body(body: str) -> dict:
         sections["最大一个坑"] = "\n".join(f"- {key}：{value}" for key, value in core_pitfall.items())
     if core_advice:
         sections["最值钱忠告"] = core_advice
+
+    story_fields = parse_story_section(sections.get("故事线", ""))
+    for key, value in story_fields.items():
+        if value:
+            sections[key] = value
 
     decisions = parse_decision_section(sections.get("决策地图", ""))
     principles = parse_numbered_lines(sections.get("作战三原则", ""))
@@ -994,11 +1164,16 @@ def build_case_body(
     account_context: str = "待补充",
     time_context: str = "待补充",
     resource_links: list[str] | None = None,
+    story_start: str = "",
+    story_turn: str = "",
+    story_payoff: str = "",
+    story_evidence: list[str] | None = None,
 ) -> str:
     cross_case_refs = cross_case_refs or []
     counterfactual_notes = counterfactual_notes or []
     sequence_steps = sequence_steps or []
     resource_links = resource_links or []
+    story_evidence = story_evidence or []
     lines = [f"# {title}", "", "---", "", "## 【案例身份证】", ""]
     lines.extend(
         [
@@ -1065,6 +1240,30 @@ def build_case_body(
             "",
             "### 最值钱一句忠告：",
             advice,
+            "",
+            "---",
+            "",
+            "## 【故事线】",
+            "",
+            "### 起点处境：",
+            story_start or "待补充：作者起点、限制条件和开始动机尚未抽清。",
+            "",
+            "### 关键转折：",
+            story_turn or "待补充：原文里的关键变化点、踩坑与修正动作尚未抽清。",
+            "",
+            "### 结果兑现：",
+            story_payoff or "待补充：结果变化、数字兑现和阶段性收获尚未抽清。",
+            "",
+            "### 故事证据：",
+        ]
+    )
+    if story_evidence:
+        for item in story_evidence:
+            lines.append(f"- {item}")
+    else:
+        lines.append("- 待补充：需要回到原文摘出最有画面感的经历段落。")
+    lines.extend(
+        [
             "",
             "---",
             "",
@@ -1138,10 +1337,7 @@ def build_case_body(
 
 
 def write_jsonl(path: Path, rows: list[dict]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as handle:
-        for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+    atomic_write_jsonl(path, rows)
 
 
 def read_jsonl(path: Path) -> list[dict]:

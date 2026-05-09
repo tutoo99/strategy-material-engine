@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from _buildmate_lib import assert_project_root
+from _io_safety import file_lock
 
 SCRIPTS = [
     ("build_entity_cards.py", False),
@@ -27,24 +28,25 @@ def main() -> None:
     args = parser.parse_args()
 
     root = assert_project_root(Path(args.root))
-    scripts_dir = Path(__file__).resolve().parent
-    stable_env = os.environ.copy()
-    stable_env.setdefault('OMP_NUM_THREADS', '1')
-    stable_env.setdefault('MKL_NUM_THREADS', '1')
-    stable_env.setdefault('OPENBLAS_NUM_THREADS', '1')
-    stable_env.setdefault('VECLIB_MAXIMUM_THREADS', '1')
-    for name, uses_encoder in SCRIPTS:
-        script = scripts_dir / name
-        cmd = [sys.executable, str(script), '--root', str(root)]
-        if uses_encoder:
-            cmd.extend(['--device', args.device, '--batch-size', str(args.batch_size)])
-        result = subprocess.run(cmd, capture_output=True, text=True, env=stable_env)
-        if result.returncode != 0:
-            print(result.stdout)
-            print(result.stderr)
-            raise SystemExit(f'Index build failed: {name}')
-        if result.stdout.strip():
-            print(result.stdout.strip())
+    with file_lock(root, "index"):
+        scripts_dir = Path(__file__).resolve().parent
+        stable_env = os.environ.copy()
+        stable_env.setdefault('OMP_NUM_THREADS', '1')
+        stable_env.setdefault('MKL_NUM_THREADS', '1')
+        stable_env.setdefault('OPENBLAS_NUM_THREADS', '1')
+        stable_env.setdefault('VECLIB_MAXIMUM_THREADS', '1')
+        for name, uses_encoder in SCRIPTS:
+            script = scripts_dir / name
+            cmd = [sys.executable, str(script), '--root', str(root)]
+            if uses_encoder:
+                cmd.extend(['--device', args.device, '--batch-size', str(args.batch_size)])
+            result = subprocess.run(cmd, capture_output=True, text=True, env=stable_env)
+            if result.returncode != 0:
+                print(result.stdout)
+                print(result.stderr)
+                raise SystemExit(f'Index build failed: {name}')
+            if result.stdout.strip():
+                print(result.stdout.strip())
     print('All indexes built successfully.')
 
 

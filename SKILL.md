@@ -28,6 +28,7 @@ status: active
 
 - **精华帖 / 实操复盘 / 项目拆解** → `sources/` + `assets/cases/`，必要时再派生 `assets/materials/`
 - **公众号观点文 / 情感文 / 感悟文** → `sources/` + `assets/materials/`，默认不建 case
+- **系统课程 / 教学实录 / 长访谈 / 多模块 transcript** → 先进 `sources/`，再按主题域拆成 `assets/materials/`；只有当它同时围绕一条完整商业执行链时才额外建 case
 - **想保留出处但暂时不加工** → 只进 `sources/`
 
 ## 推荐命令
@@ -43,6 +44,9 @@ status: active
 /opt/miniconda3/bin/python3 scripts/search_knowledge.py "这句话原文出处" --mode source --root ..
 /opt/miniconda3/bin/python3 scripts/search_knowledge.py "它更适合做私域吗" --mode hybrid --history "上一个案例是图书垂直小店，通过抖音内容带货再承接到知识付费" --query-planner-provider auto --show-query-plan --verbose
 /opt/miniconda3/bin/python3 scripts/evaluate_query_planner.py --root .. --provider auto
+/opt/miniconda3/bin/python3 scripts/validate_materials.py --root .. assets/materials/method/xxx.md
+/opt/miniconda3/bin/python3 scripts/repair_materials.py --root .. assets/materials/method/xxx.md --write
+/opt/miniconda3/bin/python3 scripts/plan_source_materials.py sources/materials/xxx.md --root ..
 ```
 
 索引构建默认走稳定配置，而不是追求峰值吞吐：
@@ -56,10 +60,46 @@ status: active
 ### 入库相关
 
 - 导入来源：`scripts/import_source_and_route.py`
+- 批量导入来源并最后统一刷索引：`scripts/batch_import_sources.py`
+- 从 source 自动规划素材拆分：`scripts/plan_source_materials.py`
 - 从来源提取素材：`scripts/extract_material.py`
 - 从来源提取案例草稿：`scripts/extract_case.py`
 - 注册结构化案例：`scripts/register_case.py`
 - 从案例派生素材：`scripts/derive_materials_from_case.py`
+
+批量导入时优先用：
+
+```bash
+/opt/miniconda3/bin/python3 scripts/batch_import_sources.py input1.md input2.md --root . --bucket auto --flush
+```
+
+精华帖 / 长文需要优先沉淀原子素材时：
+
+```bash
+/opt/miniconda3/bin/python3 scripts/batch_import_sources.py input1.md input2.md --root . --bucket buildmate --use-existing-source --plan-source-materials --plan-source-materials-llm --create-source-material-drafts --flush
+```
+
+精华帖还需要补充 case 链路时：
+
+```bash
+/opt/miniconda3/bin/python3 scripts/batch_import_sources.py input1.md input2.md --root . --bucket buildmate --extract-case --llm --register-case --derive-materials --skip-case-preflight --flush
+```
+
+注意：批量脚本会逐篇安全落库，但只在最后执行一次 `flush_indexes.py`。不要为同一批文章给每篇单独跑索引刷新。
+
+注意：当前外部 Chat LLM 统一只接 DeepSeek。`--llm` 用于 case 草稿提取；`--plan-source-materials-llm` 用于 source 到原子素材的语义拆分规划。DeepSeek 只生成结构化 JSON 计划，写文件、查重、校验、索引仍由脚本完成。`--derive-materials` 仍是从已注册 case 里机械派生素材，不是 LLM 从原文拆素材。
+
+多主题课程 / 长访谈入库时，推荐直接连跑规划：
+
+```bash
+/opt/miniconda3/bin/python3 scripts/import_source_and_route.py input.md --root . --bucket materials --plan-materials
+```
+
+如果只想看拆分计划、不立刻写 draft，也可以单独执行：
+
+```bash
+/opt/miniconda3/bin/python3 scripts/plan_source_materials.py sources/materials/xxx.md --root . --llm --write-plan work/plans/xxx.material-plan.md
+```
 
 ### 索引相关
 
@@ -127,11 +167,68 @@ find ~/.hermes/skills/strategy-material-engine -path "*/materials/*" -name "*关
 ```
 如果 source 和对应 materials 都已存在，跳过入库。部分存在时只补缺的。
 
+### Step 2：写 source / Step 3：写素材时的 YAML frontmatter 避坑
+
+写 frontmatter 时最常踩的坑是**中文标点导致 YAML 解析失败**（`ParserError`）。
+
+**好消息**：`_material_lib.py` 里的 `_sanitize_yaml_frontmatter()` 已自动处理三种高频问题：
+1. 中文引号「""」「''」→ 直角引号「「」」「『』」
+2. 全角括号「（）」→ 半角「()」
+3. 双引号字符串后紧跟裸文本：`- "xxx"注释` → `- "xxx注释"`
+
+所以大部分中文内容可以直接写，不用手动转义。
+
+**仍需手动避免的情况**：
+- 嵌套双引号：`primary_claim: "现金红包"比"返现"更有诱惑力` ← YAML 不支持
+- 嵌套单引号：`primary_claim: '现金红包'比'返现'更有诱惑力`
+- 裸中文破折号——（YAML 不认）
+- 冒号后没空格：`key:value` ← 必须写 `key: value`
+- 双引号闭合后紧跟非空格字符：`key: "xxx"——yyy` ← YAML 会把——解析为新标量开头
+
+**推荐写法**（安全优先）：
+- 纯中文不加引号：`primary_claim: 现金红包比返现更有诱惑力，用户觉得踏实`
+- 强调用书名号或方括号：`primary_claim: 现金红包比返现更有诱惑力`
+- 整行双引号包裹（内部无双引号）：`primary_claim: "现金红包比返现更有诱惑力"`
+- 整行单引号包裹（内部无单引号，可含——）：`primary_claim: '无法开始，才是最大的问题——新手内容创业最大障碍'`
+
+**如果 flush 还是报 ParserError**，在 source 写完后、flush 前跑验证定位问题文件：
+```bash
+cd ~/.hermes/skills/strategy-material-engine && python3 -c "
+import yaml, glob
+files = glob.glob('assets/materials/**/*.md', recursive=True) + glob.glob('assets/case_drafts/**/*.md', recursive=True)
+for f in sorted(files):
+    try:
+        with open(f) as fh:
+            c = fh.read()
+        if c.startswith('---'):
+            yaml.safe_load(c.split('---',2)[1])
+    except Exception as e:
+        print(f'ERROR: {f}: {e}')
+" && echo 'All OK'
+```
+
 ### Step 2：写 source
 写完整原文到 `sources/buildmate/` 或 `sources/materials/`，frontmatter 按 schema 填写（title/author/origin/date/tags/link/summary）。保留原文不做删改。
 
 ### Step 3：提取素材
-按内容类型决定提取什么：
+先判断**内容形态**，再决定提取什么：
+
+- **单主题文章**：通常围绕 1-2 个核心观点展开，按文章主论点往下拆
+- **多主题长文 / 长访谈**：先列主题域，再按域拆
+- **系统课程 / 教学实录 / transcript**：默认视为“刻意设计的知识体系”，先按模块/章节/能力域拆，不要把整课压成一条
+
+如果是多主题 source，先跑一遍规划器，再决定最终入库标题：
+
+```bash
+cd scripts && python3 plan_source_materials.py ../sources/materials/xxx.md --root .. --write-plan ../work/plans/xxx.material-plan.md
+```
+
+规划器会先做三件事：
+- 判断 source 形态是 `single_theme_article` 还是 `multi_theme_course / multi_theme_longform`
+- 按 `## / ###` 章节生成主题域拆分草案
+- 给出建议素材类型、标题和 claims 草稿，减少手工“先列主题域”的负担
+
+再按内容类型决定提取什么：
 
 **观点文/方法论文**（如 V先生轻创业锦囊）：不建 case，直接提取 materials。常见类型分布：
 - `method`：框架、流程、SOP、清单（最常见，干货密度高的文章通常 1-3 条）
@@ -144,10 +241,29 @@ find ~/.hermes/skills/strategy-material-engine -path "*/materials/*" -name "*关
 
 **命名规范**：用中文概括核心主张，如 `垂直领域四种写作模板-维基百科法知乎法豆瓣法芒格法.md`。避免和已有文件重名。
 
-**提取密度参考**：一篇 3000-5000 字干货文通常提取 4-8 条素材。不要贪多，只提取真正有复用价值的原子单元。
+**提取密度参考**：
+- 单主题 3000-5000 字干货文通常提取 `4-8` 条
+- 单主题 15000 字以上长文通常提取 `6-12` 条
+- **系统课程 / 教学实录 / 多主题 transcript 不按字数硬限条数**，而是按“独立主题域数 × 每域可复用单元数”决定
+- 一个独立主题域，通常至少应拆出 `1-3` 条专精素材；如果原文覆盖 6 个主题域，最终常见会落在 `6-18` 条，必要时更多
+
+**单源多主题拆分规则**：
+1. 先给 source 列一个 `3-10` 项的主题域清单，再开始写素材
+2. 每个独立主题域至少检查一次：是否应该单独成条，而不是并入“大全”
+3. 同一主题域里如果同时存在 `method / insight / data / quote` 等不同复用单元，应优先拆成多条，不要强行糊成一条
+4. 只有当几个部分共享同一个不可分的核心主张时，才允许合并
+5. **禁止把镜头语言、场面调度、声音设计、行业判断、学习方法这类可独立复用的模块合成一条总括素材**
+
+**“不要贪多”的正确含义**：
+- 它只用于防止从短文里硬凑重复碎片
+- 它**不**意味着把多个独立主题硬并成一条“更完整”的大全素材
+- 对系统课程，宁可拆成多条专精素材，也不要提成一条包罗万象但检索价值很低的总结
 
 ### Step 4：标记脏桶 + 刷新索引
 ```bash
+cd scripts && python3 validate_materials.py --root .. ../assets/materials/method/xxx.md
+cd scripts && python3 repair_materials.py --root .. ../assets/materials/method/xxx.md --write
+cd scripts && python3 validate_materials.py --root .. ../assets/materials/method/xxx.md
 cd scripts && python3 -c "
 from _index_state import mark_dirty; from pathlib import Path
 root = Path('..').resolve()
@@ -156,11 +272,172 @@ mark_dirty(root, 'materials', reason='...')
 " && python3 flush_indexes.py --root .. --all
 ```
 
+### 注意：entity 卡片会被 flush 重建（反复踩坑确认）
+
+`build_entity_cards.py` 会从 source 内容自动生成/重建 `assets/entities/people/*.md`。**手写或修改过的 entity 全部内容（包括手写的简介、方法论、金句列表）会在 `flush_indexes.py --all` 时被完全覆盖。** 这不是增量更新，是整文件重建。
+
+**正确的操作顺序：**
+
+1. 写 source / case / materials（正常流程）
+2. 标记脏桶 + 刷新索引（`flush_indexes.py --all`）
+3. **flush 完成后再写/更新 entity 卡片**（不要在 flush 前）
+
+如果你在 flush 前写了 entity，flush 会覆盖它，你需要重写一遍。不要犯这个错误——已经反复踩了3轮。
+
+entity 的 `source_count` 和 `source_refs` 字段会被自动维护，不需要手动更新。但自动生成的内容质量远不如手写（会直接截取 source 原文而非提炼摘要），所以重要人物（如条形马、亦仁等）的 entity 建议始终手动维护，flush 后重写。
+
 ### Step 5：搜索验证
 ```bash
 cd scripts && python3 search_knowledge.py "关键词" --mode writing --root .. --disable-query-rewrite
 ```
 确认新素材能被检索命中，score > 0.8 为佳。
+
+## 内容入库实操 Playbook（Hermes 对话内入库）
+
+当用户发文件说"入库"时，按以下流程执行：
+
+### Step 0：读取全文
+- **先查 sources/ 是否已有存档**：`find ~/.hermes/skills/strategy-material-engine -path "*/sources/*" -name "*关键词*"`，有就从 sources/ 读原文，不要依赖用户原始路径（用户原始文件可能已删除/移动/重命名）
+- 如果 sources/ 没有，再从用户提供的路径读取
+- 先 `read_file` 看全文结构和长度
+- 如果文件超过 2000 行，分批读取（offset 500/1000/1500...）
+- 如果是 HTML/PDF，先预处理提取纯文本（参考「输入文件格式预处理」）
+- **先判断内容形态**：这是单主题文章、多主题长文、系统课程、教学实录、还是长访谈；后续提取密度和拆分策略依赖这个判断
+- **如果是课程/实录/长访谈**：先列出模块或主题域清单，再进入提取
+
+### Step 1：导入 source
+```bash
+/opt/miniconda3/bin/python3 /path/to/scripts/import_source_and_route.py \
+  "/path/to/input.md" \
+  --root /path/to/strategy-material-engine \
+  --bucket materials \
+  --source-type article \
+  --title "文章标题" \
+  --author "作者" \
+  --origin "来源平台/社群" \
+  --date "YYYY-MM-DD" \
+  --tags "标签1,标签2,标签3" \
+  --link "" \
+  --summary "一句话概括文章核心内容和价值" \
+  2>&1
+```
+
+关键参数：
+- `--bucket materials`：观点文/方法论文走 materials，实操复盘走 buildmate
+- `--tags`：必须包含作者名、主题关键词、来源平台（生财有术等）
+- `--summary`：写清楚文章的实操验证数据（如"2个月257万销售额"）
+
+### Step 2：分析并提取素材
+
+**提取什么**：只提取真正有复用价值的原子单元，不是概括全文。
+
+**先做形态判断**：
+- **单主题文章**：围绕主论点拆，避免同义重复
+- **多主题长文**：先拆主题域，再在域内拆原子单元
+- **系统课程 / 教学实录 / transcript**：按模块、章节、能力域、知识域拆；默认视为“单源多主题”
+
+**提取密度**：
+- 3000-5000 字单主题干货文通常 `4-8` 条
+- 15000 字以上单主题长文通常 `6-12` 条
+- **系统课程 / 教学实录 / 多主题 transcript 没有固定上限**
+- 对这类内容，先数清有多少独立主题域；**每个域至少考虑 1 条，常见是 1-3 条**
+- 如果原文是超长系统课，最终条数明显高于 `6-10` 是正常的，不要因为“看起来已经很多了”而提前停
+
+**素材类型判断**：
+| 类型 | 何时用 | 特征 |
+|------|--------|------|
+| `method` | 框架/SOP/流程/清单 | 有步骤、有标准、可照做（最常见） |
+| `insight` | 反常识洞察/本质归纳 | 颠覆认知的一句话+论证 |
+| `playbook` | 可执行打法 | 比 method 更具体，带条件判断 |
+| `quote` | 金句 | 有传播力的一句话 |
+| `data` | 具体数字/对比数据 | 可引用的硬数据 |
+| `story` | 真实案例故事 | 有人物有情节有结果 |
+
+**单源多主题的执行规则**：
+1. 先写主题域清单，例如：镜头语言 / 场面调度 / 声音设计 / 行业数据 / 学习路径 / 常见误区
+2. 每个主题域单独判断是否能生成 `method`、`insight`、`data` 等不同素材
+3. 只要两个模块在未来写作或检索时可能被单独调用，就应该拆成两条
+4. **默认反对“总括型大全素材”**；只有 source 本身的价值就在于“跨模块总框架”时，才额外保留一条总纲
+5. 如果一条素材标题里开始出现“完整方法论 / 全景 / 一网打尽 / 所有核心都在这里”这类倾向，先反查是否过度合并
+
+**写素材的黄金规则**：
+1. `primary_claim`：一句话说清这个素材的核心价值，读完就知道要不要用
+2. `claims`：3-7 条关键论点，用列表格式，每条是一个可独立引用的原子观点
+3. `tags`：必须包含作者名 + 主题关键词，方便后续按作者或主题搜索
+4. 正文部分：提炼核心步骤或核心观点，不要照搬原文大段文字，要用自己的话重新组织
+5. 命名：用中文概括核心主张，如 `四路搜索法竞品差评分析.md`
+
+**什么时候停**：
+- 不是看到 `6-10` 条就停
+- 而是当每个主题域都已经覆盖到可复用的主张，并且再往下拆只会得到同义重复或证据不足的碎片时再停
+
+**YAML frontmatter 避坑**（踩过多次坑，现已自动修复大部分）：
+- `_sanitize_yaml_frontmatter()` 会自动处理中文引号、全角括号、双引号后裸文本
+- 仍需手动避免：嵌套引号、裸破折号——、冒号后没空格
+- 具体见「Step 2：YAML frontmatter 避坑」章节
+
+### Step 3：写素材文件
+每条素材写入对应类型目录：
+```
+assets/materials/method/xxx.md
+assets/materials/insight/xxx.md
+assets/materials/playbook/xxx.md
+...
+```
+
+### Step 4：flush 索引
+```bash
+/opt/miniconda3/bin/python3 scripts/flush_indexes.py \
+  --root /path/to/strategy-material-engine \
+  --bucket materials 2>&1
+```
+
+### Step 5：汇报结果
+给用户一个表格，列清楚：
+- 素材库总数变化（如 275条 +6）
+- 每条素材的类型、标题、核心要点（一句话）
+
+### 连续多帖渐进式入库（同一人物多帖）
+
+当用户连续发同一人物的多个帖子/短帖要求入库时（如刘智行系列帖），会出现数据拼图效应和校正需求。处理要点：
+
+1. **每帖独立提取素材**：不要因为"之前已入库"就跳过。不同帖子往往有新数据点、新方法、新金句。
+2. **主动做数据校正**：当新帖数据与已有素材矛盾时，建一条 `data` 类型素材做校正记录，格式用对比表（旧值|校正值）。例：`刘智行广告合作数据校正飞猪42575元10月互选单条10万合作品牌宝马飞猪银行.md`
+3. **建数据全景素材**：当积累了3+帖数据后，建一条 `data` 类型素材做全矩阵数据交叉验证，把多源数据按时间线排列。这比散落在多条素材里的数据更有检索价值。
+4. **命名时含数据关键词**：如 `刘智行单号9月收入81527元流量主1.5万广告4.2万橱窗9千陪跑1.5万.md`，方便后续按金额/月份/收入类型搜索。
+5. **source_refs 统一指向同一 source 文件**：如果多篇帖子来自同一精华帖合集（如"生财5年差生逆袭.md"），都指向同一个 source。
+
+### 常见来源的处理经验
+
+**生财有术精华帖**（如条形马、袁锐钦、银河等）：
+- source 放 `sources/materials/`
+- 标签必含作者名+生财有术
+- 作者如果重要人物，记忆里记录
+
+**公众号文章**：
+- 先确认是否已入库（查重）
+- 标签含作者名+公众号矩阵相关标签
+
+**HTML 文件**：
+- 先用 Python 提取纯文本，注意处理 `<br>` → `\\n`、HTML entities
+- 提取模板（execute_code 中用正则）：
+  ```python
+  import re
+  text = re.sub(r'<br\s*/?>', '\n', html)
+  text = re.sub(r'<[^>]+>', '', text)
+  text = re.sub(r'&nbsp;', ' ', text)
+  text = re.sub(r'&lt;', '<', text)
+  text = re.sub(r'&gt;', '>', text)
+  text = re.sub(r'&amp;', '&', text)
+  lines = [l.strip() for l in text.split('\n') if l.strip()]
+  clean = '\n\n'.join(lines)
+  ```
+- 超过 6000 字的 HTML 建议分批读取（clean[:6000] 先看前半段判断结构）
+
+**纯文本粘贴**（用户直接在对话中粘贴文章）：
+- 先用 write_file 保存到 /tmp/ 下
+- 再用 import_source_and_route.py 导入
+- 路径用 /tmp/xxx.md
 
 ## 搜索路径
 
@@ -194,12 +471,14 @@ cd scripts && python3 search_knowledge.py "关键词" --mode writing --root .. -
 
 常用环境变量：
 
-- `GLM_API_KEY`：GLM Query Planner 和 embedding 模型默认读取这个
-- `GLM_BASE_URL`：默认 `https://open.bigmodel.cn/api/paas/v4`
-- `GLM_TEXT_MODEL`：默认 `glm-4.7`
-- `KNOWLEDGE_EMBEDDING_MODEL`：默认 `embedding-3`（智谱 GLM 系列）
-- `ARK_API_KEY`：如果没配 GLM，会自动回到 ARK
-- `KNOWLEDGE_QUERY_PLANNER_LLM_BACKEND=auto|glm|ark`：手动指定 Planner 的 LLM 后端
+- `DEEPSEEK_API_KEY`：DeepSeek Chat LLM 默认读取这个
+- `DEEPSEEK_BASE_URL`：默认 `https://api.deepseek.com`
+- `DEEPSEEK_MODEL`：默认 `deepseek-v4-pro`
+- `DEEPSEEK_THINKING`：默认 `enabled`
+- `DEEPSEEK_REASONING_EFFORT`：默认 `high`
+- `KNOWLEDGE_QUERY_PLANNER_API_KEY`：Query Planner 专用覆盖 key；未设置时读取 `DEEPSEEK_API_KEY`
+- `KNOWLEDGE_QUERY_PLANNER_MODEL`：Query Planner 专用覆盖模型；未设置时读取 `DEEPSEEK_MODEL`
+- `KNOWLEDGE_QUERY_PLANNER_LLM_BACKEND=auto|deepseek`：手动指定 Planner 的 LLM 后端
 
 运行时产物：
 

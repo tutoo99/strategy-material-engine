@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -20,6 +21,8 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 
 import numpy as np
 import yaml
+
+from _io_safety import atomic_write_jsonl
 
 
 DEFAULT_MODEL_NAME = "BAAI/bge-large-zh-v1.5"
@@ -43,13 +46,46 @@ def _import_faiss():
     return faiss
 
 
+def _sanitize_yaml_frontmatter(raw: str) -> str:
+    """Sanitize common CJK patterns that break YAML safe_load.
+
+    Handles:
+    - CJK curly quotes \u201c\u201d\u2018\u2019 → corner brackets \u300c\u300d\u300e\u300f
+      (these look like ASCII quotes to humans but are invalid YAML string delimiters)
+    - Fullwidth parens \uff08\uff09 → halfwidth parens
+    - Bare text after a double-quoted scalar on the same list line, e.g.
+      - \"text\"note  →  - \"textnote\"
+      This happens frequently with CJK annotations like - \"xxx\"（yyy）
+    """
+    out = raw.replace("\u201c", "\u300c").replace("\u201d", "\u300d")
+    out = out.replace("\u2018", "\u300e").replace("\u2019", "\u300f")
+    out = out.replace("\uff08", "(").replace("\uff09", ")")
+    # Merge bare text after closing double-quote on list-item lines:
+    #   - "quoted text"trailing  →  - "quoted texttrailing"
+    out = re.sub(
+        r'^(\s*- )\"([^\"]*)\"(\S.*)$',
+        r'\1"\2\3"',
+        out,
+        flags=re.MULTILINE,
+    )
+    # Also merge bare text after closing double-quote on non-list scalar lines:
+    #   key: "text"——trailing  →  key: "text——trailing"
+    out = re.sub(
+        r'^(?!\s*- )(\w[\w\s]*?):\s+\"([^\"]*)\"(\S.*)$',
+        r'\1: "\2\3"',
+        out,
+        flags=re.MULTILINE,
+    )
+    return out
+
+
 def parse_frontmatter(text: str) -> tuple[dict, str]:
     if not text.startswith("---\n"):
         return {}, text.strip()
     parts = text.split("\n---\n", 1)
     if len(parts) != 2:
         return {}, text.strip()
-    raw_meta = parts[0][4:]
+    raw_meta = _sanitize_yaml_frontmatter(parts[0][4:])
     body = parts[1].strip()
     meta = yaml.safe_load(raw_meta) or {}
     if not isinstance(meta, dict):
@@ -198,10 +234,7 @@ def encode_texts(
 
 
 def write_jsonl(path: Path, rows: list[dict]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as handle:
-        for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+    atomic_write_jsonl(path, rows)
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -223,7 +256,18 @@ def build_faiss_index(vectors: np.ndarray):
 def write_faiss_index(path: Path, index: Any) -> None:
     faiss = _import_faiss()
     path.parent.mkdir(parents=True, exist_ok=True)
-    faiss.write_index(index, str(path))
+    with tempfile.NamedTemporaryFile(
+        dir=str(path.parent),
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as handle:
+        temp_path = Path(handle.name)
+    try:
+        faiss.write_index(index, str(temp_path))
+        os.replace(temp_path, path)
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 def read_faiss_index(path: Path):

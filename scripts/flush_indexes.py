@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from _buildmate_lib import assert_project_root
+from _io_safety import file_lock
 from _index_state import KNOWN_BUCKETS, clear_dirty, dirty_buckets
 
 DEPENDENCIES = {
@@ -87,39 +88,40 @@ def main() -> None:
     if args.dry_run:
         return
 
-    scripts_dir = Path(__file__).resolve().parent
-    stable_env = os.environ.copy()
-    stable_env.setdefault("OMP_NUM_THREADS", "1")
-    stable_env.setdefault("MKL_NUM_THREADS", "1")
-    stable_env.setdefault("OPENBLAS_NUM_THREADS", "1")
-    stable_env.setdefault("VECLIB_MAXIMUM_THREADS", "1")
+    with file_lock(root, "index"):
+        scripts_dir = Path(__file__).resolve().parent
+        stable_env = os.environ.copy()
+        stable_env.setdefault("OMP_NUM_THREADS", "1")
+        stable_env.setdefault("MKL_NUM_THREADS", "1")
+        stable_env.setdefault("OPENBLAS_NUM_THREADS", "1")
+        stable_env.setdefault("VECLIB_MAXIMUM_THREADS", "1")
 
-    executed_buckets: list[str] = []
-    needs_entity_cards = "sources" in buckets
-    if needs_entity_cards:
-        run_script(
-            root=root,
-            scripts_dir=scripts_dir,
-            script_name="build_entity_cards.py",
-            uses_encoder=False,
-            device=args.device,
-            batch_size=args.batch_size,
-            stable_env=stable_env,
-        )
-    for bucket in buckets:
-        for script_name, uses_encoder in SCRIPT_GROUPS.get(bucket, []):
+        executed_buckets: list[str] = []
+        needs_entity_cards = "sources" in buckets
+        if needs_entity_cards:
             run_script(
                 root=root,
                 scripts_dir=scripts_dir,
-                script_name=script_name,
-                uses_encoder=uses_encoder,
+                script_name="build_entity_cards.py",
+                uses_encoder=False,
                 device=args.device,
                 batch_size=args.batch_size,
                 stable_env=stable_env,
             )
-        executed_buckets.append(bucket)
+        for bucket in buckets:
+            for script_name, uses_encoder in SCRIPT_GROUPS.get(bucket, []):
+                run_script(
+                    root=root,
+                    scripts_dir=scripts_dir,
+                    script_name=script_name,
+                    uses_encoder=uses_encoder,
+                    device=args.device,
+                    batch_size=args.batch_size,
+                    stable_env=stable_env,
+                )
+            executed_buckets.append(bucket)
 
-    clear_dirty(root, *executed_buckets)
+        clear_dirty(root, *executed_buckets)
     print("Dirty index buckets flushed successfully.")
 
 

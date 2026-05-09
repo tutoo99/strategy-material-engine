@@ -13,6 +13,8 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import yaml
 
+from _io_safety import atomic_write_json, file_lock
+
 
 REGISTRY_PATH = Path("index/_state/source_registry.json")
 NOISE_QUERY_PREFIXES = ("utm_",)
@@ -227,7 +229,7 @@ def write_registry(root: Path, payload: dict[str, Any]) -> None:
     path = registry_file(root)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload["updated_at"] = now_iso()
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    atomic_write_json(path, payload)
 
 
 def make_registry_record(
@@ -260,27 +262,29 @@ def make_registry_record(
 
 
 def upsert_registry_record(root: Path, record: dict[str, Any]) -> None:
-    payload = load_registry(root)
-    sources = payload["sources"]
-    now = now_iso()
-    for existing in sources:
-        if existing.get("path") == record.get("path"):
-            existing.update(record)
-            existing.setdefault("imported_at", record.get("imported_at") or now)
-            existing["last_seen_at"] = record.get("last_seen_at") or now
-            write_registry(root, payload)
-            return
-    sources.append(record)
-    write_registry(root, payload)
+    with file_lock(root, "source_registry"):
+        payload = load_registry(root)
+        sources = payload["sources"]
+        now = now_iso()
+        for existing in sources:
+            if existing.get("path") == record.get("path"):
+                existing.update(record)
+                existing.setdefault("imported_at", record.get("imported_at") or now)
+                existing["last_seen_at"] = record.get("last_seen_at") or now
+                write_registry(root, payload)
+                return
+        sources.append(record)
+        write_registry(root, payload)
 
 
 def refresh_registry_match(root: Path, match_path: str) -> None:
-    payload = load_registry(root)
-    for existing in payload["sources"]:
-        if existing.get("path") == match_path:
-            existing["last_seen_at"] = now_iso()
-            write_registry(root, payload)
-            return
+    with file_lock(root, "source_registry"):
+        payload = load_registry(root)
+        for existing in payload["sources"]:
+            if existing.get("path") == match_path:
+                existing["last_seen_at"] = now_iso()
+                write_registry(root, payload)
+                return
 
 
 def find_duplicate_matches(

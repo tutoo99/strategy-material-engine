@@ -4,6 +4,7 @@ import argparse
 import re
 from pathlib import Path
 
+from _io_safety import atomic_write_text, file_lock
 from _index_state import mark_dirty
 from _buildmate_lib import assert_project_root
 from _dedupe_lib import normalize_content, sha256_text
@@ -31,12 +32,52 @@ def default_body(material_type: str) -> str:
     return "这里写方法、步骤或SOP。"
 
 
+def default_ammo_type(material_type: str) -> str:
+    return {
+        "story": "hook",
+        "insight": "dual",
+        "method": "substance",
+        "data": "substance",
+        "quote": "hook",
+        "association": "hook",
+        "playbook": "substance",
+    }.get(material_type, "dual")
+
+
+def default_strength(material_type: str) -> str:
+    return {
+        "story": "anecdote",
+        "data": "data",
+        "quote": "observation",
+    }.get(material_type, "observation")
+
+
+def render_inline_list(values: list[str]) -> str:
+    if not values:
+        return "[]"
+    return "[" + ", ".join(render_scalar(value) for value in values) + "]"
+
+
+def render_scalar(value: str) -> str:
+    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("title")
     parser.add_argument("--root", default=".")
     parser.add_argument("--type", choices=["story", "insight", "data", "method", "quote", "association", "playbook"], default="story")
     parser.add_argument("--date", default="2026-04-20")
+    parser.add_argument("--source", default="待补充")
+    parser.add_argument("--source-ref", action="append", default=[])
+    parser.add_argument("--channel-fit", action="append", default=[])
+    parser.add_argument("--role", default="argument")
+    parser.add_argument("--strength")
+    parser.add_argument("--ammo-type", choices=["hook", "substance", "dual"])
+    parser.add_argument("--quality-score", type=float, default=3.0)
+    parser.add_argument("--source-reliability", type=float, default=3.0)
+    parser.add_argument("--review-status", choices=["draft", "reviewed", "approved"], default="draft")
     parser.add_argument(
         "--rebuild",
         action="store_true",
@@ -48,48 +89,47 @@ def main() -> None:
     file_name = f"{slugify(args.title)}.md"
     output_path = root / "assets/materials" / args.type / file_name
 
-    # 按类型给默认ammo_type
-    ammo_default = {
-        "story": "hook",
-        "insight": "dual",
-        "method": "substance",
-        "data": "substance",
-        "quote": "hook",
-        "association": "hook",
-        "playbook": "substance",
-    }.get(args.type, "dual")
-
-    if output_path.exists():
-        raise SystemExit(f"File already exists: {output_path}")
+    ammo_default = args.ammo_type or default_ammo_type(args.type)
+    strength_default = args.strength or default_strength(args.type)
+    channel_fit = args.channel_fit or ["general"]
+    source_refs = [str(ref).strip() for ref in args.source_ref if str(ref).strip()]
 
     body = default_body(args.type)
     content_sha256 = sha256_text(normalize_content(body))
     content = f"""---
 type: {args.type}
-primary_claim: {args.title}
+title: {render_scalar(args.title)}
+primary_claim: {render_scalar(args.title)}
 claims:
-  - {args.title}
+  - {render_scalar(args.title)}
 tags: []
 ammo_type: {ammo_default}
-role: argument
-strength: observation
-channel_fit: [general]
-source: 待补充
+role: {render_scalar(args.role)}
+strength: {render_scalar(strength_default)}
+channel_fit: {render_inline_list(channel_fit)}
+source: {render_scalar(args.source)}
+source_refs: {render_inline_list(source_refs)}
+derived_from_case:
+source_uid:
+duplicate_of:
 content_sha256: {content_sha256}
-date: {args.date}
-quality_score: 3.0
+date: {render_scalar(args.date)}
+quality_score: {args.quality_score}
 use_count: 0
 last_used_at:
 used_in_articles: []
 impact_log: []
-source_reliability: 3.0
-review_status: draft
+source_reliability: {args.source_reliability}
+review_status: {render_scalar(args.review_status)}
 ---
 
 {body}
     """
-    output_path.write_text(content, encoding="utf-8")
-    mark_dirty(root, "materials", reason="new_material")
+    with file_lock(root, "ingest"):
+        if output_path.exists():
+            raise SystemExit(f"File already exists: {output_path}")
+        atomic_write_text(output_path, content, encoding="utf-8")
+        mark_dirty(root, "materials", reason="new_material")
     print(f"Created material draft: {output_path}")
 
     if not args.rebuild:

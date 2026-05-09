@@ -16,6 +16,7 @@ from _buildmate_lib import (
     build_case_title,
     build_pending_inferences,
     build_principles,
+    derive_story_outline,
     build_startup_resources,
     compute_action_granularity_score,
     assert_project_root,
@@ -44,8 +45,8 @@ def main() -> None:
     parser.add_argument("--root", default=".")
     parser.add_argument("--output")
     parser.add_argument("--overwrite", action="store_true")
-    parser.add_argument("--llm", action="store_true", help="Use one LLM call to extract case structure, then fall back to rules for missing fields.")
-    parser.add_argument("--llm-backend", default="auto")
+    parser.add_argument("--llm", action="store_true", help="Use one DeepSeek call to extract case structure, then fall back to rules for missing fields.")
+    parser.add_argument("--llm-backend", default="auto", choices=["auto", "deepseek"])
     parser.add_argument("--llm-model", default="")
     parser.add_argument("--llm-base-url", default="")
     parser.add_argument("--llm-api-key", default="")
@@ -123,6 +124,26 @@ def extract_case(
     pitfall_sentence = normalize_whitespace(str(llm_payload.get("pitfall_sentence") or pick_first(sentences, PITFALL_KEYWORDS) or "待补充：原文未明确给出最大一个坑。"))
     pitfall_solution = normalize_whitespace(str(llm_payload.get("pitfall_solution") or "待补充：需要回到原文，找到作者如何修正这个问题。"))
     advice = normalize_whitespace(str(llm_payload.get("advice") or pick_first(sentences, ADVICE_KEYWORDS) or "待补充：需要从原文提炼一句能直接改变动作的忠告。"))
+    story_outline = derive_story_outline(
+        body=body,
+        title=str(meta.get("title", "") or source_path.stem),
+        author_identity=author_identity,
+        one_line_business=one_line_business,
+        core_goal=core_goal,
+        final_result=final_result,
+        pitfall_text=pitfall_sentence,
+        decisions=decisions,
+    )
+    story_start = normalize_whitespace(str(llm_payload.get("story_start") or story_outline.get("start") or "待补充"))
+    story_turn = normalize_whitespace(str(llm_payload.get("story_turn") or story_outline.get("turn") or "待补充"))
+    story_payoff = normalize_whitespace(str(llm_payload.get("story_payoff") or story_outline.get("payoff") or "待补充"))
+    story_evidence_raw = llm_payload.get("story_evidence")
+    if isinstance(story_evidence_raw, list):
+        story_evidence = [normalize_whitespace(str(item)) for item in story_evidence_raw if normalize_whitespace(str(item))]
+    else:
+        story_evidence = []
+    if not story_evidence:
+        story_evidence = [normalize_whitespace(str(item)) for item in story_outline.get("evidence_blocks", []) if normalize_whitespace(str(item))]
     pending_inferences = build_pending_inferences(
         author_identity=author_identity,
         startup_resources=startup_resources,
@@ -162,6 +183,10 @@ def extract_case(
         account_context=account_context,
         time_context=time_context,
         resource_links=resource_links,
+        story_start=story_start,
+        story_turn=story_turn,
+        story_payoff=story_payoff,
+        story_evidence=story_evidence,
     )
 
     case_meta = {

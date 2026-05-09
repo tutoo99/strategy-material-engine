@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator
 
+from _llm_client import DEFAULT_DEEPSEEK_BASE_URL, DEFAULT_DEEPSEEK_MODEL, call_deepseek_json, validate_deepseek_backend
 from _knowledge_lib import (
     DEFAULT_MODEL_NAME,
     DEFAULT_QUERY_PREFIX,
@@ -73,15 +74,8 @@ PLATFORM_TERMS = (
 
 QUERY_PLANNER_PROVIDER = os.getenv("KNOWLEDGE_QUERY_PLANNER_PROVIDER", "auto").strip().lower()
 QUERY_PLANNER_LLM_BACKEND = os.getenv("KNOWLEDGE_QUERY_PLANNER_LLM_BACKEND", "auto").strip().lower()
-ARK_QUERY_PLANNER_API_KEY = os.getenv("KNOWLEDGE_QUERY_PLANNER_ARK_API_KEY", os.getenv("KNOWLEDGE_QUERY_PLANNER_API_KEY", os.getenv("ARK_API_KEY", ""))).strip()
-ARK_QUERY_PLANNER_BASE_URL = os.getenv("KNOWLEDGE_QUERY_PLANNER_ARK_BASE_URL", os.getenv("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"))
-ARK_QUERY_PLANNER_MODEL = os.getenv("KNOWLEDGE_QUERY_PLANNER_ARK_MODEL", os.getenv("FENXIANGBIAO_TEXT_MODEL", "doubao-1-5-pro-32k-250115"))
-GLM_QUERY_PLANNER_API_KEY = os.getenv("KNOWLEDGE_QUERY_PLANNER_GLM_API_KEY", os.getenv("GLM_API_KEY", "")).strip()
-GLM_QUERY_PLANNER_BASE_URL = os.getenv("KNOWLEDGE_QUERY_PLANNER_GLM_BASE_URL", os.getenv("GLM_BASE_URL", "https://open.bigmodel.cn/api/paas/v4"))
-GLM_QUERY_PLANNER_MODEL = os.getenv("KNOWLEDGE_QUERY_PLANNER_GLM_MODEL", os.getenv("GLM_TEXT_MODEL", "glm-4.7"))
-QUERY_PLANNER_MODEL = os.getenv("KNOWLEDGE_QUERY_PLANNER_MODEL", GLM_QUERY_PLANNER_MODEL if GLM_QUERY_PLANNER_API_KEY else ARK_QUERY_PLANNER_MODEL)
-QUERY_PLANNER_BASE_URL = os.getenv("KNOWLEDGE_QUERY_PLANNER_BASE_URL", GLM_QUERY_PLANNER_BASE_URL if GLM_QUERY_PLANNER_API_KEY else ARK_QUERY_PLANNER_BASE_URL)
-QUERY_PLANNER_FALLBACK_MODELS = [item.strip() for item in os.getenv("KNOWLEDGE_QUERY_PLANNER_FALLBACK_MODELS", "").split(",") if item.strip()]
+QUERY_PLANNER_MODEL = os.getenv("KNOWLEDGE_QUERY_PLANNER_MODEL", os.getenv("DEEPSEEK_MODEL", DEFAULT_DEEPSEEK_MODEL))
+QUERY_PLANNER_BASE_URL = os.getenv("KNOWLEDGE_QUERY_PLANNER_BASE_URL", os.getenv("DEEPSEEK_BASE_URL", DEFAULT_DEEPSEEK_BASE_URL))
 QUERY_PLANNER_TIMEOUT = float(os.getenv("KNOWLEDGE_QUERY_PLANNER_TIMEOUT", "45"))
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 QUERY_PLANNER_RUNTIME_DIR = Path(os.getenv("KNOWLEDGE_QUERY_PLANNER_RUNTIME_DIR", str(SKILL_ROOT / "evals" / "query_planner")))
@@ -429,43 +423,23 @@ def resolve_query_planner_llm_config(
     override_api_key: str | None = None,
 ) -> dict[str, str]:
     resolved_backend = str(backend or "auto").strip().lower()
-
-    if resolved_backend == "glm" or (resolved_backend == "auto" and GLM_QUERY_PLANNER_API_KEY):
-        api_key = str(override_api_key or GLM_QUERY_PLANNER_API_KEY).strip()
-        if api_key:
-            return {
-                "backend": "glm",
-                "api_key": api_key,
-                "base_url": str(override_base_url or GLM_QUERY_PLANNER_BASE_URL).strip(),
-                "model": str(override_model or GLM_QUERY_PLANNER_MODEL).strip(),
-            }
-
-    api_key = str(override_api_key or ARK_QUERY_PLANNER_API_KEY).strip()
-    if api_key:
-        return {
-            "backend": "ark",
-            "api_key": api_key,
-            "base_url": str(override_base_url or ARK_QUERY_PLANNER_BASE_URL).strip(),
-            "model": str(override_model or ARK_QUERY_PLANNER_MODEL).strip(),
-        }
-
-    raise RuntimeError("缺少可用的 Query Planner LLM 凭证，请设置 GLM_API_KEY 或 ARK_API_KEY。")
+    validate_deepseek_backend(resolved_backend)
+    api_key = str(override_api_key or os.getenv("KNOWLEDGE_QUERY_PLANNER_API_KEY", "") or os.getenv("DEEPSEEK_API_KEY", "")).strip()
+    if not api_key:
+        raise RuntimeError("缺少可用的 Query Planner LLM 凭证，请设置 KNOWLEDGE_QUERY_PLANNER_API_KEY 或 DEEPSEEK_API_KEY。")
+    return {
+        "backend": "deepseek",
+        "api_key": api_key,
+        "base_url": str(override_base_url or QUERY_PLANNER_BASE_URL).strip(),
+        "model": str(override_model or QUERY_PLANNER_MODEL).strip(),
+    }
 
 
 def expand_model_aliases(model: str, backend: str) -> list[str]:
     normalized = str(model or "").strip()
     if not normalized:
         return []
-    aliases = [normalized]
-    if backend == "glm":
-        alias_map = {
-            "glm4.7": ["glm-4.7", "glm-4-plus"],
-            "glm-4.7": ["glm4.7", "glm-4-plus"],
-            "glm4.5": ["glm-4.5", "glm-4.5-flash"],
-            "glm-4.5": ["glm4.5", "glm-4.5-flash"],
-        }
-        aliases.extend(alias_map.get(normalized, []))
-    return dedupe_keep_order(aliases)
+    return [normalized]
 
 
 def now_iso() -> str:
@@ -1023,12 +997,7 @@ def call_llm_query_planner(
     resolved_base_url = llm_config["base_url"]
     primary_model = llm_config["model"]
 
-    model_candidates = dedupe_keep_order(
-        [
-            *expand_model_aliases(primary_model, llm_config["backend"]),
-            *QUERY_PLANNER_FALLBACK_MODELS,
-        ]
-    )
+    model_candidates = expand_model_aliases(primary_model, llm_config["backend"])
     cache_key = build_query_planner_cache_key(
         query,
         mode=mode,
@@ -1062,24 +1031,19 @@ def call_llm_query_planner(
         rule_plan=rule_plan,
     )
 
-    from openai import OpenAI
-
-    client = OpenAI(api_key=resolved_api_key, base_url=resolved_base_url, timeout=timeout, max_retries=1)
     last_error: Exception | None = None
     for candidate_model in model_candidates:
         started_at = time.time()
         try:
-            response = client.chat.completions.create(
+            parsed = call_deepseek_json(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                api_key=resolved_api_key,
+                base_url=resolved_base_url,
                 model=candidate_model,
+                timeout=timeout,
                 temperature=0.1,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
             )
-            content = response.choices[0].message.content or ""
-            parsed = extract_json_from_text(content)
             cache[cache_key] = {
                 "cached_at": now_iso(),
                 "model": candidate_model,
@@ -1405,7 +1369,11 @@ def mode_bonus(item: dict[str, Any], mode: str) -> float:
             return 0.03
         if asset_type == "case":
             return -0.08
-        if subtype in {"quote", "story", "insight", "association"}:
+        if subtype == "story":
+            return 0.26
+        if subtype == "data":
+            return 0.18
+        if subtype in {"quote", "insight", "association"}:
             return 0.24
         if subtype in {"method", "playbook"}:
             return 0.08
@@ -1435,7 +1403,7 @@ def group_priority(item: dict[str, Any], mode: str) -> int:
             return 2
         return 3
     if mode == "writing":
-        if asset_type == "material" and subtype in {"quote", "story", "insight", "association"}:
+        if asset_type == "material" and subtype in {"quote", "story", "insight", "association", "data"}:
             return 0
         if asset_type == "material":
             return 1
@@ -1525,8 +1493,48 @@ def apply_source_diversity(results: list[dict[str, Any]], *, mode: str, limit: i
     return selected[:limit]
 
 
+def is_writing_evidence_item(item: dict[str, Any]) -> bool:
+    return str(item.get("asset_type", "")).strip() == "material" and str(item.get("subtype", "")).strip() in {"story", "data"}
+
+
+def finalize_results(results: list[dict[str, Any]], *, mode: str, limit: int) -> list[dict[str, Any]]:
+    selected = apply_source_diversity(results, mode=mode, limit=limit)
+    if mode != "writing" or not selected:
+        return selected
+    if any(is_writing_evidence_item(item) for item in selected):
+        return selected
+
+    selected_keys = {str(item.get("id") or item.get("path")) for item in selected}
+    candidate = next(
+        (
+            item
+            for item in results
+            if is_writing_evidence_item(item) and str(item.get("id") or item.get("path")) not in selected_keys
+        ),
+        None,
+    )
+    if candidate is None:
+        return selected
+
+    replace_index = next(
+        (
+            index
+            for index in range(len(selected) - 1, -1, -1)
+            if not is_writing_evidence_item(selected[index])
+        ),
+        None,
+    )
+    if replace_index is None:
+        return selected
+
+    promoted = list(selected)
+    promoted[replace_index] = candidate
+    promoted.sort(key=lambda item: (group_priority(item, mode), -float(item.get("_score", 0.0))))
+    return promoted[:limit]
+
+
 def material_doc(item: dict[str, Any]) -> str:
-    parts = [str(item.get("primary_claim", ""))]
+    parts = [str(item.get("primary_claim", "")), str(item.get("story_arc", ""))]
     parts.extend(str(x) for x in item.get("claims", []) if x)
     body = str(item.get("body_preview", "") or item.get("body", ""))
     if body:
@@ -1988,7 +1996,7 @@ def _search_knowledge_single(
             ]
             filtered = preferred + secondary
 
-    return apply_source_diversity(filtered, mode=mode, limit=limit)
+    return finalize_results(filtered, mode=mode, limit=limit)
 
 
 def merge_search_results(
@@ -2055,7 +2063,7 @@ def merge_search_results(
             non_case_results = [item for item in merged_results if item.get("asset_type") != "case"]
             merged_results = case_results + non_case_results
 
-    return apply_source_diversity(merged_results, mode=mode, limit=limit)
+    return finalize_results(merged_results, mode=mode, limit=limit)
 
 
 def aggregate_person_intro_results(
@@ -2175,7 +2183,7 @@ def rerank_merged_results(
     limit: int,
 ) -> list[dict[str, Any]]:
     if not reranker_name or len(results) <= 1 or context.profile.rerank_top_k <= 0:
-        return apply_source_diversity(results, mode=mode, limit=limit)
+        return finalize_results(results, mode=mode, limit=limit)
 
     selected = sorted(
         results,
@@ -2196,7 +2204,7 @@ def rerank_merged_results(
         else:
             docs.append(source_doc(item))
     if not docs:
-        return apply_source_diversity(results, mode=mode, limit=limit)
+        return finalize_results(results, mode=mode, limit=limit)
 
     started = time.time()
     scores = rerank(
@@ -2229,7 +2237,7 @@ def rerank_merged_results(
         item["_score"] = float(item.get("_score", 0.0)) - 0.25 * old_norm - 0.25 * old_abs + 0.25 * norm + 0.25 * new_abs
 
     results.sort(key=lambda item: (group_priority(item, mode), -float(item.get("_score", 0.0))))
-    return apply_source_diversity(results, mode=mode, limit=limit)
+    return finalize_results(results, mode=mode, limit=limit)
 
 
 def search_knowledge(

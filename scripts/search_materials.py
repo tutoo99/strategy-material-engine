@@ -160,10 +160,14 @@ def search_materials(
         batch_size=batch_size,
         query_prefix=DEFAULT_QUERY_PREFIX,
     )
-    candidate_count = min(clamp_candidate_count(limit), len(items))
+    candidate_count = clamp_candidate_count(limit)
+    if expected_type or expected_role:
+        # Hard filters reduce the usable pool, so widen the first-pass recall window.
+        candidate_count = max(candidate_count, limit * 8)
+    candidate_count = min(candidate_count, len(items))
     scores, indices = index.search(query_vector, candidate_count)
 
-    # Phase 1: collect candidates (type/role are ranking signals, not hard filters)
+    # Phase 1: collect candidates
     candidates: list[dict[str, Any]] = []
     normalized_require_terms = normalize_term_list(require_terms)
     normalized_block_terms = normalize_term_list(block_terms)
@@ -189,6 +193,15 @@ def search_materials(
         item["_block_term_hits"] = int(block_term_hits)
         candidates.append(item)
 
+    if not candidates:
+        return []
+
+    requested_type = str(expected_type or "").strip()
+    if requested_type:
+        candidates = [item for item in candidates if str(item.get("type", "")).strip() == requested_type]
+    requested_role = str(expected_role or "").strip()
+    if requested_role:
+        candidates = [item for item in candidates if str(item.get("role", "")).strip() == requested_role]
     if not candidates:
         return []
 
