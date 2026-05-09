@@ -136,6 +136,8 @@ def main() -> None:
     parser.add_argument("--llm-api-key", default="")
     parser.add_argument("--llm-timeout", type=float, default=180.0)
     parser.add_argument("--llm-max-materials", type=int, default=20)
+    parser.add_argument("--llm-thinking", default="enabled", choices=["enabled", "disabled"], help="DeepSeek thinking mode for material planning.")
+    parser.add_argument("--llm-reasoning-effort", default="high", choices=["high", "max", "xhigh"], help="DeepSeek reasoning effort for material planning.")
     args = parser.parse_args()
 
     root = assert_project_root(Path(args.root))
@@ -160,6 +162,8 @@ def main() -> None:
                 api_key=args.llm_api_key,
                 timeout=args.llm_timeout,
                 max_materials=args.llm_max_materials,
+                thinking=args.llm_thinking,
+                reasoning_effort=args.llm_reasoning_effort,
             )
         except Exception as exc:
             if args.fail_fast:
@@ -332,6 +336,8 @@ def plan_materials_with_llm(
     api_key: str,
     timeout: float,
     max_materials: int,
+    thinking: str,
+    reasoning_effort: str,
 ) -> tuple[str, list[PlannedMaterial]]:
     system_prompt, user_prompt = build_llm_material_planner_prompt(
         source_title=source_title,
@@ -349,6 +355,8 @@ def plan_materials_with_llm(
         model=model,
         timeout=timeout,
         temperature=0.1,
+        thinking=thinking,
+        reasoning_effort=reasoning_effort,
     )
     return sanitize_llm_material_plan(payload, fallback_source_shape=fallback_source_shape, max_materials=max_materials)
 

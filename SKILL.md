@@ -89,6 +89,8 @@ status: active
 
 注意：当前外部 Chat LLM 统一只接 DeepSeek。`--llm` 用于 case 草稿提取；`--plan-source-materials-llm` 用于 source 到原子素材的语义拆分规划。DeepSeek 只生成结构化 JSON 计划，写文件、查重、校验、索引仍由脚本完成。`--derive-materials` 仍是从已注册 case 里机械派生素材，不是 LLM 从原文拆素材。
 
+DeepSeek 思考模式按任务分层：source 拆素材和 case 抽取默认 `thinking=enabled, reasoning_effort=high`；搜索 Query Planner 默认 `thinking=disabled`，避免日常检索被深度思考拖慢。只有未来做多步 Agent 化自修复时，才考虑把对应链路单独调到 `max`。
+
 多主题课程 / 长访谈入库时，推荐直接连跑规划：
 
 ```bash
@@ -474,11 +476,13 @@ assets/materials/playbook/xxx.md
 - `DEEPSEEK_API_KEY`：DeepSeek Chat LLM 默认读取这个
 - `DEEPSEEK_BASE_URL`：默认 `https://api.deepseek.com`
 - `DEEPSEEK_MODEL`：默认 `deepseek-v4-pro`
-- `DEEPSEEK_THINKING`：默认 `enabled`
-- `DEEPSEEK_REASONING_EFFORT`：默认 `high`
+- `DEEPSEEK_THINKING`：全局覆盖 DeepSeek 思考模式；未设置时由调用场景决定
+- `DEEPSEEK_REASONING_EFFORT`：全局覆盖 DeepSeek 思考强度；思考模式下 `low/medium` 会按 DeepSeek 兼容规则映射为 `high`，`xhigh` 映射为 `max`
 - `KNOWLEDGE_QUERY_PLANNER_API_KEY`：Query Planner 专用覆盖 key；未设置时读取 `DEEPSEEK_API_KEY`
 - `KNOWLEDGE_QUERY_PLANNER_MODEL`：Query Planner 专用覆盖模型；未设置时读取 `DEEPSEEK_MODEL`
 - `KNOWLEDGE_QUERY_PLANNER_LLM_BACKEND=auto|deepseek`：手动指定 Planner 的 LLM 后端
+- `KNOWLEDGE_QUERY_PLANNER_THINKING`：Query Planner 思考模式，默认 `disabled`
+- `KNOWLEDGE_QUERY_PLANNER_REASONING_EFFORT`：Query Planner 思考强度，默认不传；只在显式开启 planner 思考时使用
 
 运行时产物：
 

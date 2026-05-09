@@ -77,6 +77,8 @@ QUERY_PLANNER_LLM_BACKEND = os.getenv("KNOWLEDGE_QUERY_PLANNER_LLM_BACKEND", "au
 QUERY_PLANNER_MODEL = os.getenv("KNOWLEDGE_QUERY_PLANNER_MODEL", os.getenv("DEEPSEEK_MODEL", DEFAULT_DEEPSEEK_MODEL))
 QUERY_PLANNER_BASE_URL = os.getenv("KNOWLEDGE_QUERY_PLANNER_BASE_URL", os.getenv("DEEPSEEK_BASE_URL", DEFAULT_DEEPSEEK_BASE_URL))
 QUERY_PLANNER_TIMEOUT = float(os.getenv("KNOWLEDGE_QUERY_PLANNER_TIMEOUT", "45"))
+QUERY_PLANNER_THINKING = os.getenv("KNOWLEDGE_QUERY_PLANNER_THINKING", "disabled").strip().lower()
+QUERY_PLANNER_REASONING_EFFORT = os.getenv("KNOWLEDGE_QUERY_PLANNER_REASONING_EFFORT", "").strip().lower()
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 QUERY_PLANNER_RUNTIME_DIR = Path(os.getenv("KNOWLEDGE_QUERY_PLANNER_RUNTIME_DIR", str(SKILL_ROOT / "evals" / "query_planner")))
 _LLM_QUERY_PLANNER_DISABLED_REASON = ""
@@ -501,6 +503,8 @@ def build_query_planner_cache_key(
     rule_plan: dict[str, Any],
     model_name: str,
     base_url: str,
+    thinking: str,
+    reasoning_effort: str,
 ) -> str:
     payload = {
         "query": normalize_query_text(query),
@@ -515,6 +519,8 @@ def build_query_planner_cache_key(
         },
         "model_name": model_name,
         "base_url": base_url,
+        "thinking": thinking,
+        "reasoning_effort": reasoning_effort,
     }
     return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
 
@@ -1006,6 +1012,8 @@ def call_llm_query_planner(
         rule_plan=rule_plan,
         model_name="|".join(model_candidates),
         base_url=resolved_base_url,
+        thinking=QUERY_PLANNER_THINKING,
+        reasoning_effort=QUERY_PLANNER_REASONING_EFFORT,
     )
     cache = load_query_planner_cache(root)
     cache_entry = cache.get(cache_key)
@@ -1043,6 +1051,8 @@ def call_llm_query_planner(
                 model=candidate_model,
                 timeout=timeout,
                 temperature=0.1,
+                thinking=QUERY_PLANNER_THINKING,
+                reasoning_effort=QUERY_PLANNER_REASONING_EFFORT,
             )
             cache[cache_key] = {
                 "cached_at": now_iso(),
@@ -1058,6 +1068,8 @@ def call_llm_query_planner(
                     "backend": "llm",
                     "provider": llm_config["backend"],
                     "model": candidate_model,
+                    "thinking": QUERY_PLANNER_THINKING,
+                    "reasoning_effort": QUERY_PLANNER_REASONING_EFFORT,
                     "elapsed_seconds": round(time.time() - started_at, 3),
                     "cache_key": cache_key,
                 },

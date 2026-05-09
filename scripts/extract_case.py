@@ -51,6 +51,8 @@ def main() -> None:
     parser.add_argument("--llm-base-url", default="")
     parser.add_argument("--llm-api-key", default="")
     parser.add_argument("--llm-timeout", type=float, default=120.0)
+    parser.add_argument("--llm-thinking", default="enabled", choices=["enabled", "disabled"], help="DeepSeek thinking mode for case extraction.")
+    parser.add_argument("--llm-reasoning-effort", default="high", choices=["high", "max", "xhigh"], help="DeepSeek reasoning effort for case extraction.")
     args = parser.parse_args()
 
     root = assert_project_root(Path(args.root))
@@ -67,6 +69,8 @@ def main() -> None:
         llm_base_url=args.llm_base_url,
         llm_api_key=args.llm_api_key,
         llm_timeout=args.llm_timeout,
+        llm_thinking=args.llm_thinking,
+        llm_reasoning_effort=args.llm_reasoning_effort,
     )
     print(f"Created case draft: {created_path}")
 
@@ -82,6 +86,8 @@ def extract_case(
     llm_base_url: str = "",
     llm_api_key: str = "",
     llm_timeout: float = 120.0,
+    llm_thinking: str = "enabled",
+    llm_reasoning_effort: str = "high",
 ) -> Path:
     meta, body = read_markdown(source_path)
     sentences = split_sentences(body)
@@ -99,6 +105,8 @@ def extract_case(
                 base_url=llm_base_url,
                 api_key=llm_api_key,
                 timeout=llm_timeout,
+                thinking=llm_thinking,
+                reasoning_effort=llm_reasoning_effort,
             )
             print("LLM extraction succeeded.", file=sys.stderr)
         except Exception as exc:

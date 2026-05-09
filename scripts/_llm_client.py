@@ -10,6 +10,10 @@ from typing import Any
 
 DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-pro"
+DEFAULT_DEEPSEEK_THINKING = "enabled"
+DEFAULT_DEEPSEEK_REASONING_EFFORT = "high"
+DEEPSEEK_THINKING_VALUES = {"", "enabled", "disabled"}
+DEEPSEEK_REASONING_EFFORT_VALUES = {"", "low", "medium", "high", "max", "xhigh"}
 
 
 def validate_deepseek_backend(backend: str) -> None:
@@ -57,14 +61,43 @@ def extract_json_from_text(text: str) -> dict[str, Any]:
     return parsed
 
 
-def deepseek_extra_body() -> dict[str, Any]:
+def normalize_deepseek_thinking(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized not in DEEPSEEK_THINKING_VALUES:
+        raise ValueError(f"Unsupported DeepSeek thinking type: {value}. Use enabled or disabled.")
+    return normalized
+
+
+def normalize_deepseek_reasoning_effort(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized not in DEEPSEEK_REASONING_EFFORT_VALUES:
+        raise ValueError(f"Unsupported DeepSeek reasoning_effort: {value}. Use high or max.")
+    if normalized in {"low", "medium"}:
+        return "high"
+    if normalized == "xhigh":
+        return "max"
+    return normalized
+
+
+def resolve_deepseek_runtime_options(
+    *,
+    thinking: str | None,
+    reasoning_effort: str | None,
+) -> tuple[str, str]:
+    resolved_thinking = normalize_deepseek_thinking(
+        os.getenv("DEEPSEEK_THINKING", thinking if thinking is not None else DEFAULT_DEEPSEEK_THINKING)
+    )
+    if resolved_thinking == "disabled":
+        return resolved_thinking, ""
+    default_effort = reasoning_effort if reasoning_effort is not None else DEFAULT_DEEPSEEK_REASONING_EFFORT
+    resolved_effort = normalize_deepseek_reasoning_effort(os.getenv("DEEPSEEK_REASONING_EFFORT", default_effort))
+    return resolved_thinking, resolved_effort
+
+
+def deepseek_extra_body(*, thinking: str) -> dict[str, Any]:
     extra_body: dict[str, Any] = {}
-    thinking_type = os.getenv("DEEPSEEK_THINKING", "enabled").strip()
-    if thinking_type:
-        extra_body["thinking"] = {"type": thinking_type}
-    reasoning_effort = os.getenv("DEEPSEEK_REASONING_EFFORT", "high").strip()
-    if reasoning_effort:
-        extra_body["reasoning_effort"] = reasoning_effort
+    if thinking:
+        extra_body["thinking"] = {"type": thinking}
     return extra_body
 
 
@@ -77,6 +110,8 @@ def call_deepseek_json(
     model: str = "",
     timeout: float = 120.0,
     temperature: float = 0.1,
+    thinking: str | None = DEFAULT_DEEPSEEK_THINKING,
+    reasoning_effort: str | None = DEFAULT_DEEPSEEK_REASONING_EFFORT,
     api_key_env: str = "DEEPSEEK_API_KEY",
     base_url_env: str = "DEEPSEEK_BASE_URL",
     model_env: str = "DEEPSEEK_MODEL",
@@ -101,17 +136,24 @@ def call_deepseek_json(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
-    extra_body = deepseek_extra_body()
+    resolved_thinking, resolved_effort = resolve_deepseek_runtime_options(
+        thinking=thinking,
+        reasoning_effort=reasoning_effort,
+    )
+    extra_body = deepseek_extra_body(thinking=resolved_thinking)
     last_error: Exception | None = None
     for use_response_format in (True, False):
         try:
             kwargs: dict[str, Any] = {
                 "model": config["model"],
-                "temperature": temperature,
                 "messages": messages,
                 "stream": False,
                 "extra_body": extra_body,
             }
+            if resolved_effort:
+                kwargs["reasoning_effort"] = resolved_effort
+            if resolved_thinking != "enabled":
+                kwargs["temperature"] = temperature
             if use_response_format:
                 kwargs["response_format"] = {"type": "json_object"}
             response = client.chat.completions.create(**kwargs)

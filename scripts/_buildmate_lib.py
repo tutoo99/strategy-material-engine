@@ -644,6 +644,8 @@ def llm_extract_case_payload(
     base_url: str = "",
     api_key: str = "",
     timeout: float = 120.0,
+    thinking: str = "enabled",
+    reasoning_effort: str = "high",
 ) -> dict[str, Any]:
     validate_deepseek_backend(backend)
     system_prompt, user_prompt = _build_extraction_prompt(title, author, summary, body)
@@ -655,6 +657,8 @@ def llm_extract_case_payload(
         model=model,
         timeout=timeout,
         temperature=0.1,
+        thinking=thinking,
+        reasoning_effort=reasoning_effort,
     )
 
 

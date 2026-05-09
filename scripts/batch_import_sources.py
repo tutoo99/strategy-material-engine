@@ -230,6 +230,10 @@ def process_one_source(
             extract_cmd.extend(["--llm-model", args.llm_model])
         if args.llm_timeout:
             extract_cmd.extend(["--llm-timeout", str(args.llm_timeout)])
+        if args.llm_thinking:
+            extract_cmd.extend(["--llm-thinking", args.llm_thinking])
+        if args.llm_reasoning_effort:
+            extract_cmd.extend(["--llm-reasoning-effort", args.llm_reasoning_effort])
     result = run_command(extract_cmd, env=env, timeout=args.extract_timeout)
     print_process_output(result)
     if result.returncode != 0:
@@ -339,6 +343,10 @@ def plan_source_materials(
         cmd.extend(["--llm-timeout", str(args.source_material_llm_timeout)])
     if args.source_material_llm_max_materials:
         cmd.extend(["--llm-max-materials", str(args.source_material_llm_max_materials)])
+    if args.source_material_llm_thinking:
+        cmd.extend(["--llm-thinking", args.source_material_llm_thinking])
+    if args.source_material_llm_reasoning_effort:
+        cmd.extend(["--llm-reasoning-effort", args.source_material_llm_reasoning_effort])
 
     result = run_command(cmd, env=env)
     print_process_output(result)
@@ -442,6 +450,8 @@ def main() -> None:
     parser.add_argument("--source-material-llm-model", default="")
     parser.add_argument("--source-material-llm-timeout", type=float, default=180.0)
     parser.add_argument("--source-material-llm-max-materials", type=int, default=20)
+    parser.add_argument("--source-material-llm-thinking", default="enabled", choices=["enabled", "disabled"])
+    parser.add_argument("--source-material-llm-reasoning-effort", default="high", choices=["high", "max", "xhigh"])
     parser.add_argument("--extract-case", action="store_true", help="Create a case draft from each newly imported source.")
     parser.add_argument("--register-case", action="store_true", help="Register each created case draft as an approved case.")
     parser.add_argument("--derive-materials", action="store_true", help="Derive template materials from each registered case.")
@@ -449,6 +459,8 @@ def main() -> None:
     parser.add_argument("--llm-backend", default="auto", choices=["auto", "deepseek"])
     parser.add_argument("--llm-model", default="")
     parser.add_argument("--llm-timeout", type=float, default=120.0)
+    parser.add_argument("--llm-thinking", default="enabled", choices=["enabled", "disabled"])
+    parser.add_argument("--llm-reasoning-effort", default="high", choices=["high", "max", "xhigh"])
     parser.add_argument("--extract-timeout", type=float, default=180.0)
     parser.add_argument("--skip-case-preflight", action="store_true")
     parser.add_argument("--overwrite-case-draft", action="store_true")
