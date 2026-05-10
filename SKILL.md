@@ -31,6 +31,20 @@ status: active
 - **系统课程 / 教学实录 / 长访谈 / 多模块 transcript** → 先进 `sources/`，再按主题域拆成 `assets/materials/`；只有当它同时围绕一条完整商业执行链时才额外建 case
 - **想保留出处但暂时不加工** → 只进 `sources/`
 
+## 入库路径选择
+
+当用户对本地文档下发“入库”命令时，默认优先走自动路径：
+
+1. 先用 `scripts/import_source_and_route.py` 或 `scripts/batch_import_sources.py`
+2. source / material 拆分默认先尝试 DeepSeek
+3. 只有在以下情况才退回手动流程：
+   - 自动规划脚本失败
+   - 用户显式要求规则模式
+   - 需要人工先查重、改 source 结构或补字段
+
+**禁止把“手动入库流程”当成默认入口。**
+手动流程只用于自动路径失败后的兜底，不是第一选择。
+
 ## 推荐命令
 
 注意：统一使用 conda base Python：
@@ -85,9 +99,13 @@ status: active
 /opt/miniconda3/bin/python3 scripts/batch_import_sources.py input1.md input2.md --root . --bucket buildmate --extract-case --llm --register-case --derive-materials --skip-case-preflight --flush
 ```
 
+注意：现在 source 材料拆分和 case 提取都默认先尝试 DeepSeek。`--plan-source-materials-llm` 和 `--llm` 主要用于显式声明意图；如果要强制规则模式，分别用 `--no-plan-source-materials-llm` 和 `--no-llm`。
+
 注意：批量脚本会逐篇安全落库，但只在最后执行一次 `flush_indexes.py`。不要为同一批文章给每篇单独跑索引刷新。
 
 注意：当前外部 Chat LLM 统一只接 DeepSeek。`--llm` 用于 case 草稿提取；`--plan-source-materials-llm` 用于 source 到原子素材的语义拆分规划。DeepSeek 只生成结构化 JSON 计划，写文件、查重、校验、索引仍由脚本完成。`--derive-materials` 仍是从已注册 case 里机械派生素材，不是 LLM 从原文拆素材。
+
+注意：素材自动提取链路现在有质量门禁。结构性问题先自动修一次，内容门禁不过就直接拒收；通过门禁的自动素材会标成 `reviewed`，`rejected` 不进入正式检索。
 
 DeepSeek 思考模式按任务分层：source 拆素材和 case 抽取默认 `thinking=enabled, reasoning_effort=high`；搜索 Query Planner 默认 `thinking=disabled`，避免日常检索被深度思考拖慢。只有未来做多步 Agent 化自修复时，才考虑把对应链路单独调到 `max`。
 
@@ -156,6 +174,8 @@ for ws in wb:
 - 提取后的文本用于 source 原文归档和 LLM 分析，不要手动编辑内容
 
 ## 手动入库流程（Hermes 直接操作时）
+
+这个流程是兜底流程。只有自动导入 / 自动规划失败，或用户明确要求不用 DeepSeek 时才走这里。
 
 当 `import_source_and_route.py` 不适用时（如 Hermes 直接写文件），完整步骤：
 
@@ -296,6 +316,8 @@ cd scripts && python3 search_knowledge.py "关键词" --mode writing --root .. -
 
 ## 内容入库实操 Playbook（Hermes 对话内入库）
 
+这个 Playbook 不是默认入口，只是自动路径失败后的手动补救流程。
+
 当用户发文件说"入库"时，按以下流程执行：
 
 ### Step 0：读取全文
@@ -332,6 +354,9 @@ cd scripts && python3 search_knowledge.py "关键词" --mode writing --root .. -
 ### Step 2：分析并提取素材
 
 **提取什么**：只提取真正有复用价值的原子单元，不是概括全文。
+
+默认先尝试 DeepSeek 规划；只有显式要求规则模式，才直接按人工规则拆。
+如果自动提取后仍有结构问题，先用 `repair_materials.py` 做机械修补，再跑 `validate_materials.py` 复检；内容门禁不过就标记为 `rejected`，不要硬塞进正式素材库。
 
 **先做形态判断**：
 - **单主题文章**：围绕主论点拆，避免同义重复

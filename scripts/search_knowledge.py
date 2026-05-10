@@ -259,6 +259,8 @@ class SearchContext:
         path = self.root / relpath
         rows = read_jsonl(path)
         items = [lightweight_item(row, asset_type) for row in rows]
+        if asset_type == "material":
+            items = [item for item in items if str(item.get("review_status", "") or "").strip() != "rejected"]
         self._items[key] = items
         if self.stats:
             self.stats.index_load_seconds += time.time() - started

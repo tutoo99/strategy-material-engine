@@ -15,6 +15,8 @@ from _io_safety import file_lock
 from _index_state import mark_dirty
 from _llm_client import call_deepseek_json, validate_deepseek_backend
 from new_material import default_ammo_type, default_strength
+from repair_materials import repair_material_meta
+from validate_materials import validate_material_components
 
 
 COURSE_HINTS = ["第一章", "第二章", "第三章", "课程", "课", "讲义", "教程", "基础概念", "入门"]
@@ -86,6 +88,8 @@ class DraftWriteResult:
     would_overwrite: int = 0
     created: int = 0
     overwritten: int = 0
+    repaired: int = 0
+    rejected: int = 0
     skipped_existing: int = 0
     failed: int = 0
     paths: list[str] | None = None
@@ -108,6 +112,8 @@ class DraftWriteResult:
             "would_overwrite": self.would_overwrite,
             "created": self.created,
             "overwritten": self.overwritten,
+            "repaired": self.repaired,
+            "rejected": self.rejected,
             "skipped_existing": self.skipped_existing,
             "failed": self.failed,
             "paths": self.paths or [],
@@ -129,7 +135,19 @@ def main() -> None:
     parser.add_argument("--channel-fit", action="append", default=[])
     parser.add_argument("--quality-score", type=float, default=3.0)
     parser.add_argument("--source-reliability", type=float, default=3.0)
-    parser.add_argument("--llm", action="store_true", help="Use DeepSeek to plan source material splits, falling back to rules on failure.")
+    parser.add_argument(
+        "--llm",
+        dest="llm",
+        action="store_true",
+        default=True,
+        help="Use DeepSeek to plan source material splits, falling back to rules on failure. Enabled by default.",
+    )
+    parser.add_argument(
+        "--no-llm",
+        dest="llm",
+        action="store_false",
+        help="Disable DeepSeek and use the rule-based material planner only.",
+    )
     parser.add_argument("--llm-backend", default="auto", choices=["auto", "deepseek"], help="Only auto/deepseek are supported.")
     parser.add_argument("--llm-model", default="")
     parser.add_argument("--llm-base-url", default="")
@@ -784,6 +802,32 @@ def process_draft_items(
 
         existed_before = output_path.exists()
         try:
+            body = build_draft_body(item)
+            meta = build_draft_meta(
+                item=item,
+                source_title=source_title,
+                source_ref=source_ref,
+                date_value=date_value,
+                channel_fit=channel_fit,
+                quality_score=quality_score,
+                source_reliability=source_reliability,
+            )
+            gated_meta, quality_errors, _quality_warnings, repair_changes = gate_draft_material(
+                root=root,
+                output_path=output_path,
+                meta=meta,
+                body=body,
+            )
+            if quality_errors:
+                result.rejected += 1
+                error = f"{relative_ref(root, output_path)}: quality gate rejected material: {'; '.join(quality_errors)}"
+                result.errors.append(error)
+                if progress:
+                    print(f"[{index}/{len(materials)}] rejected {error}", file=progress_stream, flush=True)
+                continue
+            if repair_changes:
+                result.repaired += 1
+
             if dry_run:
                 action = "would_overwrite" if existed_before else "would_create"
                 if existed_before:
@@ -792,33 +836,7 @@ def process_draft_items(
                     result.would_create += 1
                 result.paths.append(relative_ref(root, output_path))
             else:
-                body = build_draft_body(item)
-                primary_claim = item.primary_claim or (item.claims[0] if item.claims else item.title)
-                meta = {
-                    "type": item.material_type,
-                    "title": item.title,
-                    "primary_claim": primary_claim,
-                    "claims": item.claims or [item.title],
-                    "tags": infer_tags(source_title, item),
-                    "ammo_type": default_ammo_type(item.material_type),
-                    "role": "argument",
-                    "strength": default_strength(item.material_type),
-                    "channel_fit": channel_fit,
-                    "source": source_title,
-                    "source_refs": [source_ref],
-                    "derived_from_case": "",
-                    "source_uid": "",
-                    "duplicate_of": "",
-                    "date": date_value,
-                    "quality_score": quality_score,
-                    "use_count": 0,
-                    "last_used_at": None,
-                    "used_in_articles": [],
-                    "impact_log": [],
-                    "source_reliability": source_reliability,
-                    "review_status": "draft",
-                }
-                write_markdown(output_path, meta, body)
+                write_markdown(output_path, gated_meta or meta, body)
                 action = "overwritten" if existed_before else "created"
                 if existed_before:
                     result.overwritten += 1
@@ -850,12 +868,71 @@ def render_draft_summary(result: DraftWriteResult, *, dry_run: bool) -> str:
         return (
             f"{label}完成：total={result.total}, would_create={result.would_create}, "
             f"would_overwrite={result.would_overwrite}, skipped_existing={result.skipped_existing}, "
-            f"failed={result.failed}"
+            f"repaired={result.repaired}, rejected={result.rejected}, failed={result.failed}"
         )
     return (
         f"{label}完成：total={result.total}, created={result.created}, overwritten={result.overwritten}, "
-        f"skipped_existing={result.skipped_existing}, failed={result.failed}"
+        f"repaired={result.repaired}, rejected={result.rejected}, skipped_existing={result.skipped_existing}, "
+        f"failed={result.failed}"
     )
+
+
+def build_draft_meta(
+    *,
+    item: PlannedMaterial,
+    source_title: str,
+    source_ref: str,
+    date_value: str,
+    channel_fit: list[str],
+    quality_score: float,
+    source_reliability: float,
+) -> dict[str, Any]:
+    primary_claim = item.primary_claim or (item.claims[0] if item.claims else item.title)
+    return {
+        "type": item.material_type,
+        "title": item.title,
+        "primary_claim": primary_claim,
+        "claims": item.claims or [item.title],
+        "tags": infer_tags(source_title, item),
+        "ammo_type": default_ammo_type(item.material_type),
+        "role": "argument",
+        "strength": default_strength(item.material_type),
+        "channel_fit": channel_fit,
+        "source": source_title,
+        "source_refs": [source_ref],
+        "derived_from_case": "",
+        "source_uid": "",
+        "duplicate_of": "",
+        "date": date_value,
+        "quality_score": quality_score,
+        "use_count": 0,
+        "last_used_at": None,
+        "used_in_articles": [],
+        "impact_log": [],
+        "source_reliability": source_reliability,
+        "review_status": "draft",
+    }
+
+
+def gate_draft_material(
+    *,
+    root: Path,
+    output_path: Path,
+    meta: dict[str, Any],
+    body: str,
+) -> tuple[dict[str, Any] | None, list[str], list[str], list[str]]:
+    errors, warnings, repairable_errors = validate_material_components(meta=meta, body=body, root=root)
+    repair_changes: list[str] = []
+    if errors and all(error in repairable_errors for error in errors):
+        repaired_meta, repair_changes = repair_material_meta(path=output_path, root=root, meta=meta)
+        errors, warnings, _repairable_errors = validate_material_components(meta=repaired_meta, body=body, root=root)
+        meta = repaired_meta
+    if errors:
+        return None, errors, warnings, repair_changes
+    gated_meta = dict(meta)
+    if str(gated_meta.get("review_status", "") or "").strip() not in {"approved"}:
+        gated_meta["review_status"] = "reviewed"
+    return gated_meta, [], warnings, repair_changes
 
 
 def build_draft_body(item: PlannedMaterial) -> str:

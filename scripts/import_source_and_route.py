@@ -63,7 +63,12 @@ def main() -> None:
     parser.add_argument(
         "--plan-materials",
         action="store_true",
-        help="After importing a materials source, run plan_source_materials.py automatically.",
+        help="After importing a materials source, run plan_source_materials.py automatically. DeepSeek planning is enabled by default.",
+    )
+    parser.add_argument(
+        "--no-plan-materials-llm",
+        action="store_true",
+        help="When --plan-materials is enabled, disable DeepSeek and use rule-based planning only.",
     )
     parser.add_argument(
         "--plan-format",
@@ -225,6 +230,7 @@ def main() -> None:
             write_plan=args.write_plan,
             create_material_drafts=args.create_material_drafts,
             overwrite_material_drafts=args.overwrite_material_drafts,
+            use_llm=not args.no_plan_materials_llm,
         )
 
 def run_material_planner(
@@ -235,6 +241,7 @@ def run_material_planner(
     write_plan: str,
     create_material_drafts: bool,
     overwrite_material_drafts: bool,
+    use_llm: bool,
 ) -> None:
     planner_script = Path(__file__).parent / "plan_source_materials.py"
     command = [
@@ -252,6 +259,8 @@ def run_material_planner(
         command.append("--create-drafts")
     if overwrite_material_drafts:
         command.append("--overwrite")
+    if not use_llm:
+        command.append("--no-llm")
 
     print("Material plan:")
     result = subprocess.run(command, capture_output=True, text=True, check=False)

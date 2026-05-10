@@ -82,7 +82,12 @@ review_status: draft
 - `last_used_at`: 最近一次使用时间，ISO 日期或日期时间
 - `used_in_articles`: 用过这条素材的文章标识列表
 - `source_reliability`: 来源可靠度，`1.0 ~ 5.0`
-- `review_status`: `draft / reviewed / approved`
+- `review_status`: `draft / queued_for_repair / rejected / reviewed / approved`
+  - `draft`: 初稿，未通过质量门禁
+  - `queued_for_repair`: 命中了可自动修补的结构问题，等待复检
+  - `rejected`: 修补后仍不合格，或命中不可自动修补的内容质量问题
+  - `reviewed`: 已通过自动质量门禁，可以参与检索
+  - `approved`: 人工确认版
 - `impact_log`: 使用效果回写记录，每条格式：
   ```yaml
   - article: 文章标识
@@ -115,6 +120,15 @@ review_status: draft
 - **insight**（洞察）：先抛观点，再给论据。可以用列表，但重点是观点清晰、论据有力。
 - **method**（方法）：**必须写成步骤格式**，编号列出操作步骤，确保别人拿去就能照着做。关键步骤不能埋在段落里，必须独立成行。
 - **data**（数据）：先给数据/事实，再说明它支撑什么结论。数据要具体，结论要明确。
+
+#### 自动质量门禁
+
+自动提取链路必须先生成 draft，再做质量门禁：
+
+1. 结构问题先自动修一次，例如缺默认字段、`source_refs` 可唯一定位、`source` 可从来源回填。
+2. 内容问题不自动补写，例如正文空泛、`method/playbook` 没有可执行步骤、`data` 没有可量化证据、正文仍是占位文本。
+3. 自动修后复检通过的素材标记为 `reviewed`。
+4. 复检仍失败或命中内容问题的素材标记为 `rejected`，不得作为正式素材检索使用。
 
 ## Source template
 

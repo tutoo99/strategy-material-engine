@@ -160,12 +160,58 @@ def search_materials(
         batch_size=batch_size,
         query_prefix=DEFAULT_QUERY_PREFIX,
     )
+    return search_materials_with_loaded_index(
+        items=items,
+        index=index,
+        query=query,
+        query_vector=query_vector[0],
+        limit=limit,
+        expected_type=expected_type,
+        expected_role=expected_role,
+        prefer_type=prefer_type,
+        prefer_role=prefer_role,
+        reranker=reranker,
+        device=device,
+        max_per_source=max_per_source,
+        domain_query=domain_query,
+        min_domain_overlap=min_domain_overlap,
+        min_vector_score=min_vector_score,
+        require_terms=require_terms,
+        min_required_term_hits=min_required_term_hits,
+        block_terms=block_terms,
+    )
+
+
+def search_materials_with_loaded_index(
+    *,
+    items: list[dict[str, Any]],
+    index: Any,
+    query: str,
+    query_vector: Any,
+    limit: int = 5,
+    expected_type: str | None = None,
+    expected_role: str | None = None,
+    prefer_type: str | None = None,
+    prefer_role: str | None = None,
+    reranker: str | None = DEFAULT_RERANKER_NAME,
+    device: str = "auto",
+    max_per_source: int = 1,
+    domain_query: str | None = None,
+    min_domain_overlap: float = 0.0,
+    min_vector_score: float = 0.0,
+    require_terms: list[str] | None = None,
+    min_required_term_hits: int = 0,
+    block_terms: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    if not items:
+        return []
+
     candidate_count = clamp_candidate_count(limit)
     if expected_type or expected_role:
         # Hard filters reduce the usable pool, so widen the first-pass recall window.
         candidate_count = max(candidate_count, limit * 8)
     candidate_count = min(candidate_count, len(items))
-    scores, indices = index.search(query_vector, candidate_count)
+    scores, indices = index.search(query_vector.reshape(1, -1), candidate_count)
 
     # Phase 1: collect candidates
     candidates: list[dict[str, Any]] = []
@@ -177,6 +223,8 @@ def search_materials(
         if raw_score < min_vector_score:
             continue
         item = dict(items[idx])
+        if str(item.get("review_status", "") or "").strip() == "rejected":
+            continue
         relevance_text = item_relevance_text(item)
         domain_overlap = lexical_overlap_ratio(domain_query, [relevance_text]) if domain_query else 0.0
         if domain_query and min_domain_overlap > 0 and domain_overlap < min_domain_overlap:
@@ -288,6 +336,32 @@ def search_materials(
     return filtered
 
 
+def format_search_result(item: dict[str, Any], *, verbose: bool = False) -> dict[str, Any]:
+    preview = str(item.get("body", "")).replace("\n", " ")[:120]
+    payload = {
+        "path": item["path"],
+        "score": round(item["_score"], 6),
+        "vector_score": round(item["_rank_components"]["vector_score"], 6),
+        "type": item.get("type"),
+        "primary_claim": item.get("primary_claim"),
+        "role": item.get("role"),
+        "source": item.get("source"),
+        "quality_score": item.get("quality_score"),
+        "source_reliability": item.get("source_reliability"),
+        "review_status": item.get("review_status"),
+        "use_count": item.get("use_count"),
+        "last_used_at": item.get("last_used_at"),
+        "domain_overlap": round(float(item.get("_domain_overlap", 0.0)), 6),
+        "required_term_hits": item.get("_required_term_hits", 0),
+        "preview": preview,
+    }
+    if verbose:
+        payload["rank_components"] = {
+            key: round(value, 6) for key, value in item["_rank_components"].items()
+        }
+    return payload
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("query")
@@ -345,27 +419,7 @@ def main() -> None:
         block_terms=args.block_term,
     )
     for item in results:
-        preview = str(item.get("body", "")).replace("\n", " ")[:120]
-        payload = {
-            "path": item["path"],
-            "score": round(item["_score"], 6),
-            "vector_score": round(item["_rank_components"]["vector_score"], 6),
-            "type": item.get("type"),
-            "primary_claim": item.get("primary_claim"),
-            "role": item.get("role"),
-            "quality_score": item.get("quality_score"),
-            "source_reliability": item.get("source_reliability"),
-            "review_status": item.get("review_status"),
-            "use_count": item.get("use_count"),
-            "last_used_at": item.get("last_used_at"),
-            "domain_overlap": round(float(item.get("_domain_overlap", 0.0)), 6),
-            "required_term_hits": item.get("_required_term_hits", 0),
-            "preview": preview,
-        }
-        if args.verbose:
-            payload["rank_components"] = {
-                key: round(value, 6) for key, value in item["_rank_components"].items()
-            }
+        payload = format_search_result(item, verbose=args.verbose)
         print(
             json.dumps(
                 payload,

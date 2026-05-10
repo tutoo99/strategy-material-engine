@@ -30,6 +30,8 @@ def main() -> None:
         })
 
     for item in read_jsonl(root / args.materials_meta):
+        if str(item.get("review_status", "") or "").strip() == "rejected":
+            continue
         rows.append({
             "asset_type": "material",
             "subtype": item.get("type", "material"),

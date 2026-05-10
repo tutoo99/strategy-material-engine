@@ -77,7 +77,11 @@ def main() -> None:
     parser.add_argument("--ammo-type", choices=["hook", "substance", "dual"])
     parser.add_argument("--quality-score", type=float, default=3.0)
     parser.add_argument("--source-reliability", type=float, default=3.0)
-    parser.add_argument("--review-status", choices=["draft", "reviewed", "approved"], default="draft")
+    parser.add_argument(
+        "--review-status",
+        choices=["draft", "queued_for_repair", "rejected", "reviewed", "approved"],
+        default="draft",
+    )
     parser.add_argument(
         "--rebuild",
         action="store_true",

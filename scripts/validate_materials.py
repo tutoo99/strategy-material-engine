@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -25,8 +26,59 @@ ALLOWED_TYPES = {
     "story",
 }
 ALLOWED_AMMO_TYPES = {"hook", "substance", "dual"}
-ALLOWED_REVIEW_STATUS = {"draft", "reviewed", "approved"}
+ALLOWED_ROLES = {
+    "action_card",
+    "argument",
+    "case_example",
+    "ending",
+    "evidence",
+    "example",
+    "framework",
+    "hook",
+    "opening",
+    "reference",
+    "thesis",
+    "turn",
+}
+ALLOWED_STRENGTHS = {
+    "analytical",
+    "anecdote",
+    "data",
+    "experience",
+    "expert",
+    "fact",
+    "firsthand",
+    "framework",
+    "hard_data",
+    "historical",
+    "method",
+    "observation",
+    "original",
+    "practice",
+    "principle",
+    "quote",
+    "secondhand",
+    "synthesis",
+}
+ALLOWED_REVIEW_STATUS = {"draft", "queued_for_repair", "rejected", "reviewed", "approved"}
 ALLOW_EMPTY_LIST_FIELDS = {"used_in_articles", "impact_log"}
+REPAIRABLE_REQUIRED_FIELDS = {
+    "ammo_type",
+    "channel_fit",
+    "date",
+    "impact_log",
+    "primary_claim",
+    "quality_score",
+    "role",
+    "review_status",
+    "source",
+    "source_refs",
+    "source_reliability",
+    "strength",
+    "title",
+    "use_count",
+    "used_in_articles",
+}
 REQUIRED_FIELDS = [
     "type",
     "primary_claim",
@@ -46,6 +98,7 @@ REQUIRED_FIELDS = [
     "source_reliability",
     "review_status",
 ]
+PLACEHOLDER_HINTS = ("待补充", "这里写", "TODO", "TBD", "占位")
 DATA_FOREIGN_SECTION_KEYWORDS = [
     "建议",
     "方法",
@@ -101,9 +154,10 @@ def main() -> None:
 
     total_errors = 0
     total_warnings = 0
+    total_repairable = 0
 
     for path in targets:
-        errors, warnings = validate_material(path, root)
+        errors, warnings, repairable_errors = analyze_material(path=path, root=root)
         rel = path.relative_to(root)
         if not errors and not warnings:
             print(f"OK {rel}")
@@ -111,6 +165,9 @@ def main() -> None:
         print(f"[{rel}]")
         for message in errors:
             print(f"  ERROR: {message}")
+            if message in repairable_errors:
+                print(f"  REPAIRABLE: {message}")
+                total_repairable += 1
         for message in warnings:
             print(f"  WARN: {message}")
         total_errors += len(errors)
@@ -118,7 +175,7 @@ def main() -> None:
 
     print(
         f"Validated {len(targets)} material file(s): "
-        f"errors={total_errors}, warnings={total_warnings}"
+        f"errors={total_errors}, warnings={total_warnings}, repairable_errors={total_repairable}"
     )
     if total_errors > 0 or (args.strict_warnings and total_warnings > 0):
         raise SystemExit(1)
@@ -151,8 +208,11 @@ def collect_targets(root: Path, raw_paths: list[str]) -> list[Path]:
 
 
 def validate_material(path: Path, root: Path) -> tuple[list[str], list[str]]:
-    errors: list[str] = []
-    warnings: list[str] = []
+    errors, warnings, _repairable_errors = analyze_material(path=path, root=root)
+    return errors, warnings
+
+
+def analyze_material(path: Path, root: Path) -> tuple[list[str], list[str], list[str]]:
     try:
         meta, body = read_markdown(path)
     except Exception:
@@ -160,101 +220,181 @@ def validate_material(path: Path, root: Path) -> tuple[list[str], list[str]]:
         try:
             meta, body = parse_material_frontmatter(raw_text)
         except Exception as exc:
-            errors.append(f"frontmatter 解析失败：{exc}")
-            return errors, warnings
+            return [f"frontmatter 解析失败：{exc}"], [], []
+
+    return validate_material_components(meta=meta, body=body, root=root)
+
+
+def validate_material_components(meta: dict, body: str, root: Path) -> tuple[list[str], list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    repairable_errors: list[str] = []
+
+    def add_error(message: str, *, repairable: bool = False) -> None:
+        errors.append(message)
+        if repairable:
+            repairable_errors.append(message)
 
     for field in REQUIRED_FIELDS:
         value = meta.get(field)
         if value is None:
-            errors.append(f"缺少 frontmatter 字段：{field}")
+            add_error(
+                f"缺少 frontmatter 字段：{field}",
+                repairable=field in REPAIRABLE_REQUIRED_FIELDS,
+            )
             continue
         if isinstance(value, str) and not value.strip():
-            errors.append(f"frontmatter 字段为空：{field}")
+            add_error(
+                f"frontmatter 字段为空：{field}",
+                repairable=field in REPAIRABLE_REQUIRED_FIELDS,
+            )
             continue
         if isinstance(value, list) and not value and field not in ALLOW_EMPTY_LIST_FIELDS:
-            errors.append(f"frontmatter 列表字段为空：{field}")
+            add_error(
+                f"frontmatter 列表字段为空：{field}",
+                repairable=field in REPAIRABLE_REQUIRED_FIELDS,
+            )
 
     material_type = str(meta.get("type", "") or "").strip()
     if material_type not in ALLOWED_TYPES:
-        errors.append(f"`type` 不在允许范围内：{material_type or '(empty)'}")
+        add_error(f"`type` 不在允许范围内：{material_type or '(empty)'}")
+
+    title = str(meta.get("title", "") or "").strip()
+    if is_placeholder_text(title):
+        add_error("`title` 不能为空，也不能保留为 `待补充`。", repairable=True)
+
+    primary_claim = str(meta.get("primary_claim", "") or "").strip()
+    if is_placeholder_text(primary_claim):
+        add_error("`primary_claim` 不能为空，也不能保留为 `待补充`。", repairable=True)
 
     claims = ensure_string_list(meta.get("claims"))
     if not claims:
-        errors.append("`claims` 至少需要 1 条。")
+        add_error("`claims` 至少需要 1 条。")
+    else:
+        placeholder_claims = [claim for claim in claims if is_placeholder_text(claim)]
+        if placeholder_claims:
+            add_error("`claims` 不能只保留占位文本。")
 
     tags = ensure_string_list(meta.get("tags"))
     if not tags:
-        errors.append("`tags` 不能为空列表。")
+        add_error("`tags` 不能为空列表。")
 
     ammo_type = str(meta.get("ammo_type", "") or "").strip()
     if ammo_type not in ALLOWED_AMMO_TYPES:
-        errors.append(f"`ammo_type` 不在允许范围内：{ammo_type or '(empty)'}")
+        add_error(f"`ammo_type` 不在允许范围内：{ammo_type or '(empty)'}", repairable=True)
+
+    role = str(meta.get("role", "") or "").strip()
+    if role not in ALLOWED_ROLES:
+        add_error(f"`role` 不在允许范围内：{role or '(empty)'}", repairable=True)
+
+    strength = str(meta.get("strength", "") or "").strip()
+    if strength not in ALLOWED_STRENGTHS:
+        add_error(f"`strength` 不在允许范围内：{strength or '(empty)'}", repairable=True)
 
     channel_fit = ensure_string_list(meta.get("channel_fit"))
     if not channel_fit:
-        errors.append("`channel_fit` 至少需要 1 个渠道。")
+        add_error("`channel_fit` 至少需要 1 个渠道。", repairable=True)
 
     source = str(meta.get("source", "") or "").strip()
-    if not source or source == "待补充":
-        errors.append("`source` 不能为空，也不能保留为 `待补充`。")
+    if is_placeholder_text(source):
+        add_error("`source` 不能为空，也不能保留为 `待补充`。", repairable=True)
 
     source_refs = ensure_string_list(meta.get("source_refs"))
     if not source_refs:
-        errors.append("`source_refs` 至少需要 1 条可解析来源路径。")
+        add_error("`source_refs` 至少需要 1 条可解析来源路径。")
     else:
         for ref in source_refs:
             resolved, suggestion = resolve_source_ref(root, ref)
             if resolved is None:
                 if suggestion:
-                    errors.append(f"`source_refs` 无法解析：{ref}；建议改为 `{suggestion}`")
+                    add_error(f"`source_refs` 无法解析：{ref}；建议改为 `{suggestion}`", repairable=True)
                 else:
-                    errors.append(f"`source_refs` 无法解析：{ref}")
+                    add_error(f"`source_refs` 无法解析：{ref}")
 
-    parse_numeric_field(meta, "quality_score", errors, lower=1.0, upper=5.0)
-    parse_numeric_field(meta, "source_reliability", errors, lower=1.0, upper=5.0)
-    parse_int_field(meta, "use_count", errors, lower=0)
+    parse_numeric_field(meta, "quality_score", errors, lower=1.0, upper=5.0, repairable_errors=repairable_errors)
+    parse_numeric_field(meta, "source_reliability", errors, lower=1.0, upper=5.0, repairable_errors=repairable_errors)
+    parse_int_field(meta, "use_count", errors, lower=0, repairable_errors=repairable_errors)
 
     review_status = str(meta.get("review_status", "") or "").strip()
     if review_status not in ALLOWED_REVIEW_STATUS:
-        errors.append(f"`review_status` 不在允许范围内：{review_status or '(empty)'}")
+        add_error(f"`review_status` 不在允许范围内：{review_status or '(empty)'}", repairable=True)
 
     used_in_articles = meta.get("used_in_articles")
     if not isinstance(used_in_articles, list):
-        errors.append("`used_in_articles` 必须是列表。")
+        add_error("`used_in_articles` 必须是列表。", repairable=True)
 
     impact_log = meta.get("impact_log")
     if not isinstance(impact_log, list):
-        errors.append("`impact_log` 必须是列表。")
+        add_error("`impact_log` 必须是列表。", repairable=True)
 
-    if len(body.strip()) < 20:
+    body_text = body.strip()
+    if len(body_text) < 20:
         warnings.append("正文过短，像占位稿。")
+    if contains_placeholder_text(body_text):
+        add_error("正文仍包含占位文本，不可直接入库。")
 
+    if material_type in {"method", "playbook"}:
+        step_count = count_numbered_steps(body_text)
+        if step_count < 2:
+            add_error("`method/playbook` 正文至少需要 2 个可执行编号步骤。")
     if material_type == "data":
+        numeric_signals = count_numeric_signals([primary_claim, *claims], body_text)
+        if numeric_signals == 0:
+            add_error("`data` 素材缺少可量化证据，无法通过门禁。")
         warnings.extend(validate_data_purity(body, claims))
+    if material_type in {"story", "insight"} and len(body_text) < 40:
+        warnings.append("`story/insight` 正文偏短，建议补足原文依据后再入库。")
 
-    return errors, warnings
+    return errors, warnings, repairable_errors
 
 
-def parse_numeric_field(meta: dict, field: str, errors: list[str], *, lower: float, upper: float) -> None:
+def parse_numeric_field(
+    meta: dict,
+    field: str,
+    errors: list[str],
+    *,
+    lower: float,
+    upper: float,
+    repairable_errors: list[str] | None = None,
+) -> None:
     raw = meta.get(field)
     try:
         value = float(raw)
     except (TypeError, ValueError):
-        errors.append(f"`{field}` 必须是数值。")
+        message = f"`{field}` 必须是数值。"
+        errors.append(message)
+        if repairable_errors is not None:
+            repairable_errors.append(message)
         return
     if value < lower or value > upper:
-        errors.append(f"`{field}` 必须在 {lower} 到 {upper} 之间。")
+        message = f"`{field}` 必须在 {lower} 到 {upper} 之间。"
+        errors.append(message)
+        if repairable_errors is not None:
+            repairable_errors.append(message)
 
 
-def parse_int_field(meta: dict, field: str, errors: list[str], *, lower: int) -> None:
+def parse_int_field(
+    meta: dict,
+    field: str,
+    errors: list[str],
+    *,
+    lower: int,
+    repairable_errors: list[str] | None = None,
+) -> None:
     raw = meta.get(field)
     try:
         value = int(raw)
     except (TypeError, ValueError):
-        errors.append(f"`{field}` 必须是整数。")
+        message = f"`{field}` 必须是整数。"
+        errors.append(message)
+        if repairable_errors is not None:
+            repairable_errors.append(message)
         return
     if value < lower:
-        errors.append(f"`{field}` 不能小于 {lower}。")
+        message = f"`{field}` 不能小于 {lower}。"
+        errors.append(message)
+        if repairable_errors is not None:
+            repairable_errors.append(message)
 
 
 def resolve_source_ref(root: Path, ref: str) -> tuple[Path | None, str | None]:
@@ -274,6 +414,26 @@ def resolve_source_ref(root: Path, ref: str) -> tuple[Path | None, str | None]:
     if len(deduped) == 1:
         return None, str(deduped[0].relative_to(root))
     return None, None
+
+
+def is_placeholder_text(value: str) -> bool:
+    text = value.strip()
+    if not text:
+        return True
+    return contains_placeholder_text(text)
+
+
+def contains_placeholder_text(text: str) -> bool:
+    return any(hint in text for hint in PLACEHOLDER_HINTS)
+
+
+def count_numbered_steps(body: str) -> int:
+    return sum(1 for line in body.splitlines() if re.match(r"^\s*\d+[.)、]\s+", line))
+
+
+def count_numeric_signals(strings: list[str], body: str) -> int:
+    haystack = " ".join(strings) + " " + body
+    return sum(1 for char in haystack if char.isdigit()) + sum(1 for hint in DATA_NUMERIC_HINTS if hint in haystack)
 
 
 def validate_data_purity(body: str, claims: list[str]) -> list[str]:

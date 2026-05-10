@@ -222,8 +222,12 @@ def process_one_source(
     ]
     if args.overwrite_case_draft:
         extract_cmd.append("--overwrite")
-    if args.llm:
+    use_case_llm = args.llm is not False
+    if args.llm is True:
         extract_cmd.append("--llm")
+    elif args.llm is False:
+        extract_cmd.append("--no-llm")
+    if use_case_llm:
         if args.llm_backend:
             extract_cmd.extend(["--llm-backend", args.llm_backend])
         if args.llm_model:
@@ -335,7 +339,9 @@ def plan_source_materials(
         cmd.append("--progress")
     if args.overwrite_source_material_drafts:
         cmd.append("--overwrite")
-    if args.plan_source_materials_llm:
+    if args.no_plan_source_materials_llm:
+        cmd.append("--no-llm")
+    elif args.plan_source_materials_llm:
         cmd.append("--llm")
     if args.source_material_llm_model:
         cmd.extend(["--llm-model", args.source_material_llm_model])
@@ -445,7 +451,12 @@ def main() -> None:
     parser.add_argument(
         "--plan-source-materials-llm",
         action="store_true",
-        help="Use DeepSeek when planning source material splits.",
+        help="Use DeepSeek when planning source material splits. This is now the default; kept for explicitness.",
+    )
+    parser.add_argument(
+        "--no-plan-source-materials-llm",
+        action="store_true",
+        help="Disable DeepSeek for source material planning and use rules only.",
     )
     parser.add_argument("--source-material-llm-model", default="")
     parser.add_argument("--source-material-llm-timeout", type=float, default=180.0)
@@ -455,7 +466,19 @@ def main() -> None:
     parser.add_argument("--extract-case", action="store_true", help="Create a case draft from each newly imported source.")
     parser.add_argument("--register-case", action="store_true", help="Register each created case draft as an approved case.")
     parser.add_argument("--derive-materials", action="store_true", help="Derive template materials from each registered case.")
-    parser.add_argument("--llm", action="store_true", help="Use DeepSeek for case extraction.")
+    parser.add_argument(
+        "--llm",
+        dest="llm",
+        action="store_true",
+        default=None,
+        help="Use DeepSeek for case extraction. This is now the default; kept for explicitness.",
+    )
+    parser.add_argument(
+        "--no-llm",
+        dest="llm",
+        action="store_false",
+        help="Disable DeepSeek for case extraction and use rules only.",
+    )
     parser.add_argument("--llm-backend", default="auto", choices=["auto", "deepseek"])
     parser.add_argument("--llm-model", default="")
     parser.add_argument("--llm-timeout", type=float, default=120.0)
@@ -481,6 +504,8 @@ def main() -> None:
         raise SystemExit("--create-source-material-drafts/--dry-run-source-material-drafts require --plan-source-materials")
     if args.plan_source_materials_llm and not args.plan_source_materials:
         raise SystemExit("--plan-source-materials-llm requires --plan-source-materials")
+    if args.no_plan_source_materials_llm and not args.plan_source_materials:
+        raise SystemExit("--no-plan-source-materials-llm requires --plan-source-materials")
     if args.create_source_material_drafts and args.dry_run_source_material_drafts:
         raise SystemExit("--create-source-material-drafts and --dry-run-source-material-drafts are mutually exclusive")
 

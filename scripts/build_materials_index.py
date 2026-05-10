@@ -18,6 +18,8 @@ from _material_lib import (
 def build_material_doc(path: Path, root: Path) -> tuple[list[dict], list[str]]:
     text = path.read_text(encoding="utf-8")
     meta, body = parse_frontmatter(text)
+    if str(meta.get("review_status", "") or "").strip() == "rejected":
+        return [], []
     claims = ensure_string_list(meta.get("claims"))
     tags = ensure_string_list(meta.get("tags"))
     channel_fit = ensure_string_list(meta.get("channel_fit"))

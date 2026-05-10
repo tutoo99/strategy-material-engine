@@ -45,7 +45,19 @@ def main() -> None:
     parser.add_argument("--root", default=".")
     parser.add_argument("--output")
     parser.add_argument("--overwrite", action="store_true")
-    parser.add_argument("--llm", action="store_true", help="Use one DeepSeek call to extract case structure, then fall back to rules for missing fields.")
+    parser.add_argument(
+        "--llm",
+        dest="llm",
+        action="store_true",
+        default=True,
+        help="Use one DeepSeek call to extract case structure, then fall back to rules for missing fields. Enabled by default.",
+    )
+    parser.add_argument(
+        "--no-llm",
+        dest="llm",
+        action="store_false",
+        help="Disable DeepSeek and use the rule-based case extractor only.",
+    )
     parser.add_argument("--llm-backend", default="auto", choices=["auto", "deepseek"])
     parser.add_argument("--llm-model", default="")
     parser.add_argument("--llm-base-url", default="")
@@ -80,7 +92,7 @@ def extract_case(
     root: Path,
     output_path: Path | None = None,
     overwrite: bool = False,
-    use_llm: bool = False,
+    use_llm: bool = True,
     llm_backend: str = "auto",
     llm_model: str = "",
     llm_base_url: str = "",
