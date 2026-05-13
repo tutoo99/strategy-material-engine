@@ -5,7 +5,23 @@ from __future__ import annotations
 import json
 import os
 import re
+from pathlib import Path
 from typing import Any
+
+
+def _load_hermes_env() -> None:
+    """Load ~/.hermes/.env into os.environ if not already set (idempotent)."""
+    env_file = Path.home() / ".hermes" / ".env"
+    if not env_file.exists():
+        return
+    for line in env_file.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        os.environ.setdefault(key, value)
 
 
 DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
@@ -31,6 +47,7 @@ def resolve_deepseek_config(
     base_url_env: str = "DEEPSEEK_BASE_URL",
     model_env: str = "DEEPSEEK_MODEL",
 ) -> dict[str, str]:
+    _load_hermes_env()
     resolved_api_key = str(api_key or os.getenv(api_key_env, "") or os.getenv("DEEPSEEK_API_KEY", "")).strip()
     if not resolved_api_key:
         raise RuntimeError(f"Missing DeepSeek API key. Set {api_key_env} or DEEPSEEK_API_KEY.")

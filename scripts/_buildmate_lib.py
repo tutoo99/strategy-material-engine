@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import html as html_lib
 import json
 import re
 from dataclasses import dataclass
 from datetime import date
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlparse
@@ -223,6 +225,178 @@ def parse_frontmatter(text: str) -> tuple[dict, str]:
     if not isinstance(meta, dict):
         meta = {}
     return meta, body
+
+
+HTML_BLOCK_TAGS = {
+    "address",
+    "article",
+    "aside",
+    "blockquote",
+    "br",
+    "dd",
+    "details",
+    "div",
+    "dl",
+    "dt",
+    "figcaption",
+    "figure",
+    "footer",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "header",
+    "hr",
+    "li",
+    "main",
+    "nav",
+    "ol",
+    "p",
+    "pre",
+    "section",
+    "table",
+    "tbody",
+    "td",
+    "tfoot",
+    "th",
+    "thead",
+    "tr",
+    "ul",
+}
+HTML_IGNORED_TAGS = {"script", "style", "noscript", "svg"}
+
+
+class MarkdownishHTMLParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.title_parts: list[str] = []
+        self.h1_parts: list[str] = []
+        self.ignored_depth = 0
+        self.head_depth = 0
+        self.in_title = False
+        self.in_h1 = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        normalized = tag.lower()
+        if normalized in HTML_IGNORED_TAGS:
+            self.ignored_depth += 1
+            return
+        if self.ignored_depth:
+            return
+        if normalized == "head":
+            self.head_depth += 1
+            return
+        if normalized == "title":
+            self.in_title = True
+            return
+        if normalized == "h1":
+            self.in_h1 = True
+        if normalized == "li":
+            self._newline()
+            self.parts.append("- ")
+            return
+        if normalized in HTML_BLOCK_TAGS:
+            self._newline()
+
+    def handle_endtag(self, tag: str) -> None:
+        normalized = tag.lower()
+        if normalized in HTML_IGNORED_TAGS:
+            self.ignored_depth = max(0, self.ignored_depth - 1)
+            return
+        if self.ignored_depth:
+            return
+        if normalized == "title":
+            self.in_title = False
+            return
+        if normalized == "head":
+            self.head_depth = max(0, self.head_depth - 1)
+            return
+        if normalized == "h1":
+            self.in_h1 = False
+        if normalized in HTML_BLOCK_TAGS:
+            self._newline()
+
+    def handle_data(self, data: str) -> None:
+        if self.ignored_depth:
+            return
+        text = re.sub(r"\s+", " ", data).strip()
+        if not text:
+            return
+        if self.in_title:
+            self.title_parts.append(text)
+            return
+        if self.in_h1:
+            self.h1_parts.append(text)
+        if self.head_depth:
+            return
+        self._text(text)
+
+    def _newline(self) -> None:
+        if not self.parts:
+            return
+        if self.parts[-1].endswith("\n\n"):
+            return
+        if self.parts[-1].endswith("\n"):
+            self.parts.append("\n")
+            return
+        self.parts.append("\n\n")
+
+    def _text(self, text: str) -> None:
+        if self.parts and not self.parts[-1].endswith((" ", "\n", "- ")):
+            self.parts.append(" ")
+        self.parts.append(text)
+
+    def body_text(self) -> str:
+        return normalize_markdownish_text("".join(self.parts))
+
+    def title(self) -> str:
+        h1 = normalize_whitespace(" ".join(self.h1_parts))
+        if h1:
+            return h1
+        return normalize_whitespace(" ".join(self.title_parts))
+
+
+def is_html_input(path: Path, raw_text: str) -> bool:
+    if path.suffix.lower() in {".html", ".htm"}:
+        return True
+    stripped = raw_text.lstrip()[:2000].lower()
+    return (
+        stripped.startswith("<!doctype html")
+        or stripped.startswith("<html")
+        or "<body" in stripped
+    )
+
+
+def html_to_markdownish_text(raw_html: str) -> tuple[dict, str]:
+    parser = MarkdownishHTMLParser()
+    parser.feed(raw_html)
+    parser.close()
+    meta: dict[str, str] = {}
+    title = parser.title()
+    if title:
+        meta["title"] = title
+    return meta, parser.body_text()
+
+
+def normalize_markdownish_text(text: str) -> str:
+    decoded = html_lib.unescape(str(text or "")).replace("\r\n", "\n").replace("\r", "\n")
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in decoded.splitlines()]
+    result: list[str] = []
+    blank = False
+    for line in lines:
+        if not line:
+            if result and not blank:
+                result.append("")
+                blank = True
+            continue
+        result.append(line)
+        blank = False
+    while result and not result[-1]:
+        result.pop()
+    return "\n".join(result).strip()
 
 
 def dump_frontmatter(meta: dict) -> str:

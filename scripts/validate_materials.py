@@ -341,6 +341,8 @@ def validate_material_components(meta: dict, body: str, root: Path) -> tuple[lis
         numeric_signals = count_numeric_signals([primary_claim, *claims], body_text)
         if numeric_signals == 0:
             add_error("`data` 素材缺少可量化证据，无法通过门禁。")
+        for message in validate_data_numeric_evidence_support(body, claims):
+            add_error(message)
         warnings.extend(validate_data_purity(body, claims))
     if material_type in {"story", "insight"} and len(body_text) < 40:
         warnings.append("`story/insight` 正文偏短，建议补足原文依据后再入库。")
@@ -464,6 +466,81 @@ def validate_data_purity(body: str, claims: list[str]) -> list[str]:
         warnings.append("`data` 的 claims 中数据型表述占比偏低，像是混入了趋势判断或建议。")
 
     return warnings
+
+
+def validate_data_numeric_evidence_support(body: str, claims: list[str]) -> list[str]:
+    """Catch high-risk numeric unit drift between claims and quoted evidence.
+
+    The gate is intentionally narrow: it only blocks claims that put a per-unit
+    qualifier such as `每包` or `每月` near a number when no matching qualifier
+    appears near the same number in the evidence section.
+    """
+    evidence = extract_evidence_section(body)
+    if not evidence:
+        return []
+
+    errors: list[str] = []
+    for claim in claims:
+        claim_text = str(claim or "").strip()
+        if not claim_text:
+            continue
+        for number_match in re.finditer(r"\d+(?:\.\d+)?", claim_text):
+            qualifiers = numeric_context_qualifiers(claim_text, number_match.start(), number_match.end())
+            if not qualifiers:
+                continue
+            number = number_match.group(0)
+            if evidence_supports_number_qualifier(evidence, number, qualifiers):
+                continue
+            errors.append(
+                "`data` claim 的数字单位/粒度缺少原文依据："
+                f"{claim_text}（数字 {number} 附近的 {', '.join(sorted(qualifiers))} 未在原文依据中对应出现）"
+            )
+            break
+    return errors
+
+
+def extract_evidence_section(body: str) -> str:
+    match = re.search(r"^##\s+原文依据\s*$", body, flags=re.MULTILINE)
+    if not match:
+        return ""
+    evidence = body[match.end() :]
+    next_heading = re.search(r"^##\s+", evidence, flags=re.MULTILINE)
+    if next_heading:
+        evidence = evidence[: next_heading.start()]
+    return evidence
+
+
+def numeric_context_qualifiers(text: str, number_start: int, number_end: int) -> set[str]:
+    window = text[max(0, number_start - 8) : min(len(text), number_end + 8)]
+    qualifiers: set[str] = set()
+    for token in [
+        "每包",
+        "一包",
+        "每条",
+        "一条",
+        "每月",
+        "每年",
+        "每天",
+        "每日",
+        "每周",
+        "每个",
+        "每人",
+        "每户",
+        "每棵",
+    ]:
+        if token in window:
+            qualifiers.add(token)
+    return qualifiers
+
+
+def evidence_supports_number_qualifier(evidence: str, number: str, qualifiers: set[str]) -> bool:
+    if not qualifiers:
+        return True
+    for match in re.finditer(re.escape(number), evidence):
+        window = evidence[max(0, match.start() - 16) : min(len(evidence), match.end() + 16)]
+        if any(token in window for token in qualifiers):
+            return True
+    return False
 
 
 if __name__ == "__main__":

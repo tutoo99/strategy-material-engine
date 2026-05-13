@@ -101,7 +101,11 @@ status: active
 
 注意：现在 source 材料拆分和 case 提取都默认先尝试 DeepSeek。`--plan-source-materials-llm` 和 `--llm` 主要用于显式声明意图；如果要强制规则模式，分别用 `--no-plan-source-materials-llm` 和 `--no-llm`。
 
+**注意：DeepSeek API Key 必须在 shell 环境中可用。** `DEEPSEEK_API_KEY` 存在 `~/.hermes/.env` 里，但不会自动加载到 shell。如果 key 缺失，脚本会**静默回退到规则模式**，产出的素材标题是原文截断、claims 是照搬段落，质量极差。**每次运行需要 DeepSeek 的脚本前，必须先 `source ~/.hermes/.env`**。回退后需手动清理垃圾素材再重跑。
+
 注意：批量脚本会逐篇安全落库，但只在最后执行一次 `flush_indexes.py`。不要为同一批文章给每篇单独跑索引刷新。
+
+注意：`--flush` 只刷新脚本本次写入时标记过的 dirty buckets。如果 batch 后又手动 patch 了 `sources/`、`assets/cases/` 或 `assets/materials/` 文件，需要先手动标记脏桶再 flush，或直接用 `flush_indexes.py --bucket sources` / `--bucket cases` / `--bucket materials` 指定桶刷新。
 
 注意：当前外部 Chat LLM 统一只接 DeepSeek。`--llm` 用于 case 草稿提取；`--plan-source-materials-llm` 用于 source 到原子素材的语义拆分规划。DeepSeek 只生成结构化 JSON 计划，写文件、查重、校验、索引仍由脚本完成。`--derive-materials` 仍是从已注册 case 里机械派生素材，不是 LLM 从原文拆素材。
 
@@ -213,6 +217,19 @@ find ~/.hermes/skills/strategy-material-engine -path "*/materials/*" -name "*关
 - 整行双引号包裹（内部无双引号）：`primary_claim: "现金红包比返现更有诱惑力"`
 - 整行单引号包裹（内部无单引号，可含——）：`primary_claim: '无法开始，才是最大的问题——新手内容创业最大障碍'`
 
+**路径解析和中文文件名注意事项**：
+`plan_source_materials.py` 的 source 路径现在会先按当前 cwd 解析，再按 `--root` 解析；但在 Hermes、shell、脚本 cwd 不确定，或文件名含中文/空格/特殊符号时，仍优先传绝对路径，`--root` 也传项目根绝对路径。
+
+如果 zsh 传中文路径给 Python 脚本时字符被截断或丢失，导致 `Source file not found`，用 Python `sys.argv` 直接注入参数，绕过 shell 层：
+```bash
+cd scripts && /opt/miniconda3/bin/python3 -c "
+import sys
+sys.argv = ['plan_source_materials.py', '/absolute/path/to/中文文件名.md', '--root', '/absolute/path/to/strategy-material-engine', '--llm']
+from plan_source_materials import main
+main()
+" 2>&1
+```
+
 **如果 flush 还是报 ParserError**，在 source 写完后、flush 前跑验证定位问题文件：
 ```bash
 cd ~/.hermes/skills/strategy-material-engine && python3 -c "
@@ -282,6 +299,11 @@ cd scripts && python3 plan_source_materials.py ../sources/materials/xxx.md --roo
 - 对系统课程，宁可拆成多条专精素材，也不要提成一条包罗万象但检索价值很低的总结
 
 ### Step 4：标记脏桶 + 刷新索引
+如果素材/source/case 是脚本自动写入的，脚本通常会自动 `mark_dirty`；如果是手动 patch 文件，Hermes 不会触发 dirty tracking。手动改完后有两种刷新方式：
+
+1. 直接指定桶刷新：`cd scripts && python3 flush_indexes.py --root .. --bucket materials`
+2. 先 `mark_dirty`，再无参 flush：
+
 ```bash
 cd scripts && python3 validate_materials.py --root .. ../assets/materials/method/xxx.md
 cd scripts && python3 repair_materials.py --root .. ../assets/materials/method/xxx.md --write
@@ -293,6 +315,8 @@ mark_dirty(root, 'sources', reason='...')
 mark_dirty(root, 'materials', reason='...')
 " && python3 flush_indexes.py --root .. --all
 ```
+
+只改 `assets/materials` 时优先刷 `--bucket materials`；只改 `sources` 时刷 `--bucket sources`；只改 `assets/cases` 时刷 `--bucket cases`。`flush_indexes.py --root ..` 无参数时只看 dirty state，手动 patch 后没标脏会输出 `No dirty index buckets to flush.`。
 
 ### 注意：entity 卡片会被 flush 重建（反复踩坑确认）
 

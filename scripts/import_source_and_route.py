@@ -11,7 +11,7 @@ import yaml
 
 from _io_safety import atomic_write_text, file_lock
 from _index_state import mark_dirty
-from _buildmate_lib import assert_project_root, slugify, today_iso
+from _buildmate_lib import assert_project_root, html_to_markdownish_text, is_html_input, slugify, today_iso
 from _dedupe_lib import (
     find_duplicate_matches,
     fingerprint_source,
@@ -109,6 +109,11 @@ def main() -> None:
     input_path = Path(args.input_path).resolve()
     raw_text = input_path.read_text(encoding="utf-8")
     meta, body = parse_frontmatter(raw_text)
+    if is_html_input(input_path, raw_text) or is_html_input(input_path, body):
+        html_meta, body = html_to_markdownish_text(body)
+        for key, value in html_meta.items():
+            if value and not str(meta.get(key, "") or "").strip():
+                meta[key] = value
 
     title = args.title or str(meta.get("title") or input_path.stem)
     author = args.author or str(meta.get("author", ""))

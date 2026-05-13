@@ -188,9 +188,13 @@ def main() -> None:
                 raise SystemExit(f"DeepSeek material planning failed: {exc}") from exc
             print(f"Warning: DeepSeek material planning failed, falling back to rules. {exc}", file=sys.stderr)
             picked_sections = pick_theme_sections(sections, source_shape)
+            if not picked_sections and body.strip():
+                picked_sections = fallback_sections_from_body(source_title, body)
             materials = [plan_material(section) for section in picked_sections if section.content.strip()]
     else:
         picked_sections = pick_theme_sections(sections, source_shape)
+        if not picked_sections and body.strip():
+            picked_sections = fallback_sections_from_body(source_title, body)
         materials = [plan_material(section) for section in picked_sections if section.content.strip()]
 
     draft_result: DraftWriteResult | None = None
@@ -259,13 +263,19 @@ def main() -> None:
 
 
 def resolve_source_path(root: Path, raw_path: str) -> Path:
-    candidate = Path(raw_path)
-    if not candidate.is_absolute():
-        candidate = root / candidate
-    resolved = candidate.resolve()
-    if not resolved.exists() or not resolved.is_file():
-        raise SystemExit(f"Source file not found: {raw_path}")
-    return resolved
+    candidate = Path(raw_path).expanduser()
+    candidates = [candidate] if candidate.is_absolute() else [candidate, root / candidate]
+    seen: set[Path] = set()
+    tried: list[str] = []
+    for item in candidates:
+        resolved = item.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        tried.append(str(resolved))
+        if resolved.exists() and resolved.is_file():
+            return resolved
+    raise SystemExit(f"Source file not found: {raw_path}. Tried: {', '.join(tried)}")
 
 
 def relative_ref(root: Path, path: Path) -> str:
@@ -311,7 +321,7 @@ def extract_heading_sections(body: str) -> list[HeadingSection]:
 
 
 def normalize_heading(value: str) -> str:
-    cleaned = re.sub(r"^\d+(?:\.\d+)*\s*", "", str(value).strip())
+    cleaned = re.sub(r"^\d{1,2}(?:\.\d{1,2})*[\s、.。．)-]+", "", str(value).strip())
     cleaned = cleaned.replace("：", " ").replace(":", " ")
     cleaned = re.sub(r"^[.。．、·\s\-_]+", "", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" -*_")
@@ -327,6 +337,50 @@ def pick_theme_sections(sections: list[HeadingSection], source_shape: str) -> li
     if level2:
         return level2
     return sections
+
+
+def fallback_whole_source_section(source_title: str, body: str) -> HeadingSection:
+    return HeadingSection(
+        level=2,
+        title=source_title,
+        parent_title="",
+        content=body.strip(),
+    )
+
+
+def fallback_sections_from_body(source_title: str, body: str, *, limit: int = 20) -> list[HeadingSection]:
+    paragraphs = []
+    seen: set[str] = set()
+    for raw_paragraph in re.split(r"\n\s*\n", body):
+        paragraph = clean_markup(raw_paragraph)
+        if not paragraph or paragraph == source_title or paragraph.startswith("作者:"):
+            continue
+        if len(paragraph) < 80:
+            continue
+        if paragraph in seen:
+            continue
+        seen.add(paragraph)
+        paragraphs.append(paragraph)
+        if len(paragraphs) >= limit:
+            break
+    if not paragraphs:
+        return [fallback_whole_source_section(source_title, body)]
+    return [
+        HeadingSection(
+            level=2,
+            title=suggest_fallback_section_heading(paragraph, index),
+            parent_title="",
+            content=paragraph,
+        )
+        for index, paragraph in enumerate(paragraphs, start=1)
+    ]
+
+
+def suggest_fallback_section_heading(paragraph: str, index: int) -> str:
+    sentence = split_sentences(paragraph)[0] if split_sentences(paragraph) else paragraph
+    heading = clean_claim(sentence)
+    heading = heading[:36].strip(" ，。；;：:")
+    return heading or f"未命名段落{index}"
 
 
 def plan_material(section: HeadingSection) -> PlannedMaterial:
@@ -417,6 +471,7 @@ def build_llm_material_planner_prompt(
             "不要把完整文章压成一条素材",
             "不要为铺垫、寒暄、目录单独建素材",
             "method/playbook 要能指导行动，data 必须包含具体数字或事实，insight 必须是明确判断或本质归纳",
+            "data 的数字、单位、对象和统计粒度必须忠于原文，不得自行换算或把“一条/一包/每月/每年”等单位改写成另一种粒度",
             "claims 必须短句化，每条 1 个意思，最多 5 条",
             "evidence_spans 必须摘录原文中的短片段，最多 3 条",
         ],
@@ -638,7 +693,7 @@ def has_strong_data_signal(title: str, content: str) -> bool:
     unit_hits = sum(combined.count(unit) for unit in DATA_UNITS)
     number_hits = len(re.findall(r"\d+(?:\.\d+)?", combined))
     hint_hits = sum(1 for token in DATA_SIGNAL_HINTS if token in combined)
-    return title_hit or (hint_hits >= 2 and number_hits >= 2) or (unit_hits >= 2 and number_hits >= 3)
+    return title_hit or (hint_hits >= 1 and number_hits >= 1) or (hint_hits >= 2 and unit_hits >= 1)
 
 
 def should_prefix_parent(heading: str) -> bool:
